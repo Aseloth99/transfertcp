@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Build output (PyInstaller)
+build/
+dist/
+*.exe
+
+# Local configuration and runtime data (the app keeps these in the user profile;
+# a config.json next to main.py would be used as a first-run seed)
+config.json
+*.log
+logs/
+*.db
+*.sqlite
+*.sqlite3
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
