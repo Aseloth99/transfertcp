@@ -36,14 +36,16 @@ from .icons import (
 
 
 def _color_swatch_icon(hex_color: str) -> QIcon:
+    from PyQt6.QtCore import QRectF
     from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen
-    pix = QPixmap(16, 16)
+    pix = QPixmap(32, 32)  # 2x çözünürlük (yüksek DPI'da keskin); şekil diğer uygulamalarla aynı
     pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(2)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setBrush(QColor(hex_color))
-    p.setPen(QPen(QColor(0, 0, 0, 80), 1))
-    p.drawRoundedRect(1, 1, 14, 14, 3, 3)
+    p.setPen(QPen(QColor(hex_color).darker(115), 1))
+    p.drawRoundedRect(QRectF(1, 1, 14, 14), 4, 4)
     p.end()
     return QIcon(pix)
 

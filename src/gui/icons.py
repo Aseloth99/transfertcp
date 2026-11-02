@@ -4,24 +4,30 @@ from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
 
+_SCALE = 2  # simgeler 2x çözünürlükte basılır (yüksek DPI'da keskin kalır)
+
+
 def _canvas(size: int = 20) -> tuple[QPixmap, QPainter]:
-    pix = QPixmap(size, size)
+    pix = QPixmap(size * _SCALE, size * _SCALE)
     pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(_SCALE)
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     return pix, painter
 
 
+# Tema simgeleri (Sistem / Koyu / Açık): vurguya değil nötr/anlamsal renge bağlıdır (güneş sarı, ay ve sistem gri).
+# Aynı çizim ve renkler FlexiKey, MediaCompressor ve Lumina'da da vardır.
 def theme_system_icon() -> QIcon:
     pix, p = _canvas()
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QBrush(QColor("#475569")))
-    p.drawEllipse(2, 2, 16, 16)
-    p.setBrush(QBrush(QColor("#f8fafc")))
-    p.drawPie(2, 2, 16, 16, 90 * 16, 180 * 16)
-    p.setPen(QPen(QColor(0, 0, 0, 45), 1))
+    p.setBrush(QBrush(QColor("#6f6f6f")))
+    p.drawEllipse(QRectF(2.0, 2.0, 16.0, 16.0))
+    p.setBrush(QBrush(QColor("#f2f2f2")))
+    p.drawPie(QRectF(2.0, 2.0, 16.0, 16.0), 90 * 16, 180 * 16)
+    p.setPen(QPen(QColor("#8c8c8c"), 1.0))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawEllipse(2, 2, 16, 16)
+    p.drawEllipse(QRectF(2.5, 2.5, 15.0, 15.0))
     p.end()
     return QIcon(pix)
 
@@ -29,10 +35,12 @@ def theme_system_icon() -> QIcon:
 def theme_dark_icon() -> QIcon:
     pix, p = _canvas()
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QBrush(QColor("#6366f1")))
-    p.drawEllipse(2, 2, 16, 16)
-    p.setBrush(QBrush(QColor("#1e1b4b")))
-    p.drawEllipse(7, 2, 13, 14)
+    moon = QPainterPath()
+    moon.addEllipse(QRectF(3.0, 3.0, 14.0, 14.0))
+    bite = QPainterPath()
+    bite.addEllipse(QRectF(7.6, 1.2, 12.0, 12.0))
+    p.setBrush(QBrush(QColor("#9a9a9a")))
+    p.drawPath(moon.subtracted(bite))
     p.end()
     return QIcon(pix)
 
@@ -41,7 +49,7 @@ def theme_light_icon() -> QIcon:
     pix, p = _canvas()
     p.setPen(QPen(QColor("#f59e0b"), 1.6))
     p.setBrush(QBrush(QColor("#fbbf24")))
-    p.drawEllipse(5, 5, 10, 10)
+    p.drawEllipse(QRectF(5.0, 5.0, 10.0, 10.0))
     for ang in range(0, 360, 45):
         p.save()
         p.translate(10, 10)
@@ -150,12 +158,12 @@ def settings_gear_icon(color_hex: str = "#38bdf8") -> QIcon:
     color = QColor(color_hex)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QBrush(color))
-    p.drawEllipse(QRectF(6.2, 6.2, 7.6, 7.6))
+    p.drawEllipse(QRectF(5.6, 5.6, 8.8, 8.8))
     for ang in range(0, 360, 45):
         p.save()
         p.translate(10, 10)
         p.rotate(ang)
-        p.drawRoundedRect(QRectF(-1.5, -8.4, 3.0, 4.2), 0.8, 0.8)
+        p.drawRoundedRect(QRectF(-1.5, -8.6, 3.0, 4.6), 0.8, 0.8)
         p.restore()
     # göbek deliği: sabit koyu/lacivert nokta yerine şeffaf delik (her menü zemininde doğru görünür)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
