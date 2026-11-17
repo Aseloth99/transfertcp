@@ -8,10 +8,11 @@ from PyQt6.QtGui import QFont, QCursor
 
 from ..models.device import Device
 from ..models.database import get_database
-from ..utils.locales import configured_language, get_active_language, t
+from ..utils.locales import configured_language, t
 from ..utils.logger import get_logger
 from datetime import datetime
 
+from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
 from .widgets.tone import set_tone
 
@@ -68,7 +69,7 @@ class DeviceItemWidget(QWidget):
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
-        # Baglanti durumu (Cevrimici/Cevrimdisi): adin sagina, kisa; IP satiri tasmasin diye ayri tutulur
+        # Baglanti durumu (Cevrimici/Cevrimdisi): kisa, IP satirinin sagina yaslanir
         self.state_label = QLabel(self._state_text())
         self.state_label.setObjectName("deviceState")
         state_font = QFont()
@@ -88,13 +89,15 @@ class DeviceItemWidget(QWidget):
         self.info_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.status_indicator.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         
-        name_row = QHBoxLayout()
-        name_row.setContentsMargins(0, 0, 0, 0)
-        name_row.setSpacing(8)
-        name_row.addWidget(self.name_label, 1)
-        name_row.addWidget(self.state_label, 0)
-        info_layout.addLayout(name_row)
-        info_layout.addWidget(self.info_label)
+        # Ad üst satırın tamamını alır; durum yazısı IP satırının sağında (dar panelde ad "Misa…" diye kesiliyordu)
+        info_layout.addWidget(self.name_label)
+        detail_row = QHBoxLayout()
+        detail_row.setContentsMargins(0, 0, 0, 0)
+        detail_row.setSpacing(8)
+        detail_row.addWidget(self.info_label)
+        detail_row.addStretch(1)
+        detail_row.addWidget(self.state_label, 0)
+        info_layout.addLayout(detail_row)
         
         # Favorite star
         self.favorite_btn = QPushButton("★" if self.device.is_favorite else "☆")
@@ -185,6 +188,7 @@ class DeviceListWidget(QWidget):
         
         # Header
         header = QWidget()
+        self._header = header
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(12, 12, 12, 12)
         
@@ -196,6 +200,8 @@ class DeviceListWidget(QWidget):
         
         self.device_count_label = QLabel("0")
         set_tone(self.device_count_label, "muted")
+        self.device_count_label.setMinimumWidth(1)  # uzun biçim sığmazsa _render_count kısaltır
+        self._count = (0, 0)
         
         # Refresh button
         self.refresh_btn = QPushButton(t("refresh", self.lang))
@@ -232,7 +238,8 @@ class DeviceListWidget(QWidget):
         header_layout.addWidget(self.refresh_btn)
         
         # Device list
-        self.list_widget = QListWidget()
+        # Panel daralınca kartlar da daralır (yoksa genişleyen kart geri küçülmüyor, yıldız kesiliyordu)
+        self.list_widget = CardListWidget()
         self.list_widget.setObjectName("device_list_view")
         self.list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
@@ -358,13 +365,6 @@ class DeviceListWidget(QWidget):
                 return widget.device
         return None
     
-    def clear_devices(self):
-        """Clear all devices"""
-        self.list_widget.clear()
-        self.devices.clear()
-        self._update_count()
-        self.selection_changed.emit()
-
     def begin_refresh(self):
         """Yenileme sırasında boş durum panelini gizle (flicker önleme)."""
         self._suppress_empty = True
@@ -386,6 +386,7 @@ class DeviceListWidget(QWidget):
         self.empty_title.setText(t("empty_devices_title", self.lang))
         self.empty_hint.setText(t("empty_devices_hint", self.lang))
         self.empty_add_btn.setText(t("add_device", self.lang))
+        self._render_count()
         for _item, widget in self.devices.values():  # "Çevrimiçi/Çevrimdışı" yazısı da dile uysun
             widget.refresh_texts()
 
@@ -410,12 +411,31 @@ class DeviceListWidget(QWidget):
         online_count = sum(1 for _, widget in self.devices.values()
                           if widget.device.is_online)
         total_count = len(self.devices)
-        self.device_count_label.setText(f"{online_count}/{total_count}")
+        self._count = (online_count, total_count)
+        self._render_count()
         if hasattr(self, "empty_box"):
             show_empty = total_count == 0 and not self._suppress_empty
             self.empty_box.setVisible(show_empty)
             self.list_widget.setVisible(not show_empty)  # bosken liste yerine aciklama alanin tamamini kaplar
     
+    def _render_count(self):
+        """"2/3" tek başına belirsizdi: yer varsa "2/3 çevrimiçi", yoksa "2/3"; ipucu her zaman açıklar."""
+        online, total = self._count
+        full = t("devices_online_short", self.lang).format(online=online, total=total)
+        short = f"{online}/{total}"
+        others = [w for w in (self.title_label, self.add_btn, self.refresh_btn) if not w.isHidden()]
+        layout = self._header.layout()
+        margins = layout.contentsMargins()
+        room = (self._header.width() - margins.left() - margins.right()
+                - sum(w.sizeHint().width() for w in others) - layout.spacing() * (len(others) + 1))
+        fits = self.device_count_label.fontMetrics().horizontalAdvance(full) <= room
+        self.device_count_label.setText(full if fits else short)
+        self.device_count_label.setToolTip(t("devices_online_tip", self.lang).format(online=online, total=total))
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._render_count()
+
     def _on_item_clicked(self, item):
         """Handle item click"""
         # Set as current item to trigger selection visual

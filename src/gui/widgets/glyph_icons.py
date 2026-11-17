@@ -10,7 +10,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 _CACHE: dict[tuple[str, str, int], QIcon] = {}
-KINDS = ("pause", "play", "close", "upload")
+KINDS = ("pause", "play", "close", "upload", "arrow_up", "arrow_down", "check", "alert")
 
 
 def glyph_color(dark: bool, tone: str = "normal") -> str:
@@ -69,6 +69,35 @@ def glyph_icon(kind: str, color: str, size: int = 16) -> QIcon:
         tray.lineTo(QPointF(s * 0.84, s * 0.82))
         tray.lineTo(QPointF(s * 0.84, s * 0.6))
         painter.drawPath(tray)
+    elif kind in ("arrow_up", "arrow_down"):
+        # Transfer rozeti / geçmiş: yön oku ("↑"/"↓" karakteri yazı tipine göre ince ya da kaymış çiziliyordu)
+        pen = QPen(c, s * 0.11)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        tip, tail = (s * 0.2, s * 0.8) if kind == "arrow_up" else (s * 0.8, s * 0.2)
+        wing = s * 0.22 if kind == "arrow_up" else -s * 0.22
+        painter.drawLine(QPointF(s * 0.5, tail), QPointF(s * 0.5, tip))
+        painter.drawLine(QPointF(s * 0.5, tip), QPointF(s * 0.5 - wing, tip + wing))
+        painter.drawLine(QPointF(s * 0.5, tip), QPointF(s * 0.5 + wing, tip + wing))
+    elif kind == "check":
+        pen = QPen(c, s * 0.12)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        path = QPainterPath()
+        path.moveTo(QPointF(s * 0.2, s * 0.52))
+        path.lineTo(QPointF(s * 0.42, s * 0.74))
+        path.lineTo(QPointF(s * 0.8, s * 0.28))
+        painter.drawPath(path)
+    elif kind == "alert":
+        pen = QPen(c, s * 0.13)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawLine(QPointF(s * 0.5, s * 0.2), QPointF(s * 0.5, s * 0.56))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(c)
+        painter.drawEllipse(QPointF(s * 0.5, s * 0.78), s * 0.075, s * 0.075)
     painter.end()
     icon = QIcon(pix)
     _CACHE[key] = icon

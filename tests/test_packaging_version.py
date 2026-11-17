@@ -28,10 +28,14 @@ class PackagingVersionTest(unittest.TestCase):
             from PyInstaller.utils.win32 import versioninfo
         except ImportError:
             self.skipTest("PyInstaller yok")
+        from src.utils.updater import UpdateChecker
         info = versioninfo.load_version_info_from_text_file(str(ROOT / "file_version_info.txt"))
-        self.assertEqual((info.ffi.fileVersionMS, info.ffi.fileVersionLS), (1 << 16, 0))   # 1.0.0.0
+        major, minor, patch = (int(p) for p in UpdateChecker.CURRENT_VERSION.split("."))
+        self.assertEqual((info.ffi.fileVersionMS, info.ffi.fileVersionLS), ((major << 16) | minor, patch << 16))
         strings = {s.name: s.val for s in info.kids[0].kids[0].kids}
-        self.assertEqual(strings["FileVersion"], "1.0.0.0")
+        self.assertEqual(strings["FileVersion"], f"{major}.{minor}.{patch}.0")
+        # Windows bildirimlerde uygulama adı olarak açıklamayı gösterir: dile bağlı alt başlık olmasın
+        self.assertEqual(strings["FileDescription"], "TransferTCP")
 
 
 if __name__ == "__main__":

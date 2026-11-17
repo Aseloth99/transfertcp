@@ -439,9 +439,13 @@ class MainWindow(QMainWindow):
         
         # Splitter for resizable panels
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = splitter
+        self._split_done = False
         
         # Left panel: Devices
         left_panel = QWidget()
+        # En küçük pencerede kartlarda IP ve "Çevrimdışı" yazısı sağdan kesiliyordu
+        left_panel.setMinimumWidth(270)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(12, 12, 12, 12)
         
@@ -509,6 +513,19 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._position_size_grip()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._initial_split()
+
+    def _initial_split(self) -> None:
+        """İlk gösterimde sol panel pencerenin ~%30'u (270-380 px); sonra bölme 1:2 oranla büyür, kullanıcı sürükleyebilir."""
+        total = self.splitter.width()
+        if self._split_done or total <= 0:
+            return
+        self._split_done = True
+        left = max(270, min(380, int(total * 0.3)))
+        self.splitter.setSizes([left, max(0, total - left)])
 
     def _position_size_grip(self) -> None:
         grip = getattr(self, "_size_grip", None)

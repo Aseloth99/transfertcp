@@ -1,7 +1,7 @@
 """Lumina tarzı programatik menü ikonları."""
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 
 _SCALE = 2  # simgeler 2x çözünürlükte basılır (yüksek DPI'da keskin kalır)
@@ -60,24 +60,6 @@ def theme_light_icon() -> QIcon:
     return QIcon(pix)
 
 
-def refresh_network_icon(color_hex: str = "#38bdf8") -> QIcon:
-    pix, p = _canvas()
-    pen = QPen(QColor(color_hex), 1.7)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    p.setPen(pen)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawArc(QRectF(3.5, 3.5, 13, 13), 50 * 16, -240 * 16)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QBrush(QColor(color_hex)))
-    p.drawPolygon(QPolygonF([
-        QPointF(15.2, 3.2),
-        QPointF(18.4, 7.4),
-        QPointF(12.6, 7.1),
-    ]))
-    p.end()
-    return QIcon(pix)
-
-
 def history_icon(color_hex: str = "#9e9e9e") -> QIcon:
     pix, p = _canvas()
     pen = QPen(QColor(color_hex), 1.5)
@@ -88,18 +70,6 @@ def history_icon(color_hex: str = "#9e9e9e") -> QIcon:
     p.drawLine(QPointF(7, 7.2), QPointF(13, 7.2))
     p.drawLine(QPointF(7, 10.2), QPointF(13, 10.2))
     p.drawLine(QPointF(7, 13.2), QPointF(11, 13.2))
-    p.end()
-    return QIcon(pix)
-
-
-def minimize_tray_icon(color_hex: str = "#9e9e9e") -> QIcon:
-    pix, p = _canvas()
-    pen = QPen(QColor(color_hex), 1.6)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    p.setPen(pen)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(QRectF(4, 5, 12, 9), 1.5, 1.5)
-    p.drawLine(QPointF(6.5, 15.5), QPointF(13.5, 15.5))
     p.end()
     return QIcon(pix)
 

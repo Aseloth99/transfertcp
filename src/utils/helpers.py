@@ -44,6 +44,8 @@ def format_bytes(size: int) -> str:
     """Format bytes to human readable format"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size < 1024.0:
+            if unit == 'B':
+                return f"{int(size)} B"  # bayt kesirli olmaz: "0.00 B" yerine "0 B"
             return f"{size:.2f} {unit}"
         size /= 1024.0
     return f"{size:.2f} PB"

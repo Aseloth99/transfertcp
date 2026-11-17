@@ -114,7 +114,8 @@ class SelfUpdateStartupTest(unittest.TestCase):
     def test_the_guard_checks_the_running_exe_and_version(self):
         result, order, lock = self.run_guard(True)
         self.assertTrue(result)
-        self.assertEqual(order, [("guard", r"C:\Apps\TransferTCP.exe", "1.0.0")])
+        from src.utils.updater import UpdateChecker
+        self.assertEqual(order, [("guard", r"C:\Apps\TransferTCP.exe", UpdateChecker.CURRENT_VERSION)])
         self.assertEqual(lock.unlocked, 0)
 
     def test_a_rolled_back_version_releases_the_lock_launches_the_old_exe_minimized_and_exits(self):

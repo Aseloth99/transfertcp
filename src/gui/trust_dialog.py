@@ -37,19 +37,6 @@ def ask_confirm(parent, title: str, text: str, yes_text: str, no_text: str) -> b
     return box.clickedButton() is yes
 
 
-def show_info(parent, title: str, text: str, ok_text: str | None = None) -> None:
-    """Tek düğmeli bilgi kutusu (düğme metni verilmezse uygulama dilinde "Tamam")."""
-    box = MessageBox(parent)
-    box.setIcon(MessageBox.Icon.Information)
-    box.setWindowTitle(title)
-    box.setText(text)
-    if ok_text:
-        box.addButton(ok_text, MessageBox.ButtonRole.AcceptRole)
-    else:
-        box.addButton(MessageBox.StandardButton.Ok)
-    box.exec()
-
-
 class TrustDeviceDialog(ChromeDialog):
     """Gelen transfer: bu cihaza güvenilsin mi? `approved` sonucu tutar."""
 

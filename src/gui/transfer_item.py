@@ -2,17 +2,50 @@
 
 from PyQt6.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem, QLabel, 
                             QHBoxLayout, QVBoxLayout, QPushButton, QProgressBar)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont, QCursor, QPainter, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QTimer
+from PyQt6.QtGui import QFont, QCursor, QPainter, QColor, QPalette
 
 from ..models.transfer import Transfer, TransferStatus, TransferDirection
 from ..utils.error_text import localize_error
 from ..utils.helpers import format_bytes, format_duration, format_speed, format_time
-from ..utils.locales import configured_language, get_active_language, t
+from ..utils.locales import configured_language, t
 from ..utils.transfer_labels import wait_labels
+from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
 from .widgets.glyph_icons import glyph_color, glyph_icon
 from .widgets.tone import set_tone
+
+
+class _BadgeLabel(QLabel):
+    """Durum rozeti: zemin ve renk QSS'ten (QLabel#transferBadge[badge=...]), simge o renkle vektör çizilir.
+
+    Eskiden "✓", "!", "II" karakterleri yazılıyordu: yazı tipine göre ince, kaymış ya da farklı boyda görünüyordu."""
+
+    _GLYPH = 20
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._glyph = ""
+
+    def glyph(self) -> str:
+        return self._glyph
+
+    def set_glyph(self, kind: str) -> None:
+        if kind != self._glyph:
+            self._glyph = kind
+            self.update()
+
+    def paintEvent(self, event):  # noqa: N802
+        super().paintEvent(event)
+        if not self._glyph:
+            return
+        size = self._GLYPH
+        color = self.palette().color(QPalette.ColorRole.WindowText).name()
+        painter = QPainter(self)
+        glyph_icon(self._glyph, color, size).paint(
+            painter, QRect((self.width() - size) // 2, (self.height() - size) // 2, size, size)
+        )
+        painter.end()
 
 
 class TransferItemWidget(QWidget):
@@ -53,10 +86,9 @@ class TransferItemWidget(QWidget):
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(12)
 
-        # Rozet: yön oku (↑ gönderim, ↓ alma); transfer bitince ✓, hata olunca ! olur (bkz. _update_badge)
-        self.direction_label = QLabel()
+        # Rozet: yön oku (gönderim yukarı, alma aşağı); bitince onay, hatada ünlem simgesi (bkz. _update_badge)
+        self.direction_label = _BadgeLabel()
         self.direction_label.setObjectName("transferBadge")
-        self.direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.direction_label.setFixedSize(38, 38)
         root.addWidget(self.direction_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -152,21 +184,20 @@ class TransferItemWidget(QWidget):
         button.setIcon(glyph_icon(kind, glyph_color(self._dark(), tone), 16))
 
     def _update_badge(self) -> None:
-        """Rozet: çalışırken yön oku; bitince ✓, hata ! ve iptalde ✕ (renk tonu QSS'te `badge` özelliğinden)."""
+        """Rozet: çalışırken yön oku; bitince onay, hatada ünlem, iptalde çarpı (renk tonu QSS'te `badge` özelliğinden)."""
         status = self.transfer.status
         send = self.transfer.direction == TransferDirection.SEND
         if status == TransferStatus.COMPLETED:
-            glyph, tone = "✓", "ok"
+            glyph, tone = "check", "ok"
         elif status == TransferStatus.FAILED:
-            glyph, tone = "!", "err"
+            glyph, tone = "alert", "err"
         elif status == TransferStatus.CANCELLED:
-            glyph, tone = "✕", "muted"
+            glyph, tone = "close", "muted"
         elif status == TransferStatus.PAUSED:
-            glyph, tone = "II", "warn"
+            glyph, tone = "pause", "warn"
         else:
-            glyph, tone = ("↑" if send else "↓"), ("info" if send else "ok")
-        if self.direction_label.text() != glyph:
-            self.direction_label.setText(glyph)
+            glyph, tone = ("arrow_up" if send else "arrow_down"), ("info" if send else "ok")
+        self.direction_label.set_glyph(glyph)
         if self.direction_label.property("badge") != tone:
             self.direction_label.setProperty("badge", tone)
             style = self.direction_label.style()
@@ -246,7 +277,7 @@ class TransferItemWidget(QWidget):
                 set_tone(self.info_label, "warn")
                 self.speed_label.setText("")
             else:
-                self.info_label.setText(f"{size_text} - {device_text}")
+                self.info_label.setText(f"{size_text} · {device_text}")
                 set_tone(self.info_label, "body")
 
             # Update speed and ETA
@@ -344,7 +375,21 @@ class TransferItemWidget(QWidget):
         self.cancel_clicked.emit(self.transfer.transfer_id)
 
 
-class _EmptyHintList(QListWidget):
+_FINISHED = (TransferStatus.COMPLETED, TransferStatus.FAILED, TransferStatus.CANCELLED)
+
+
+class _TransferRow(QListWidgetItem):
+    """Sıra anahtarı: devam edenler üstte (en yeni önce), bitenler altta (en son biten önce)."""
+
+    def __init__(self, seq: int):
+        super().__init__()
+        self.key = (0, -seq)
+
+    def __lt__(self, other):
+        return self.key < getattr(other, "key", (0, 0))
+
+
+class _EmptyHintList(CardListWidget):
     """Liste bosken ortada kisa bir aciklama cizer; ilk transfer eklenince kendiliginden kaybolur."""
 
     def __init__(self, parent=None):
@@ -395,6 +440,7 @@ class TransferListWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.transfers = {}  # key: transfer_id, value: (item, widget)
+        self._seq = 0  # ekleme / bitiş sırası (bkz. _regroup)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -405,6 +451,7 @@ class TransferListWidget(QWidget):
         
         # Header
         header = QWidget()
+        self._header = header
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(4, 0, 4, 4)
         header_layout.setSpacing(8)
@@ -432,14 +479,13 @@ class TransferListWidget(QWidget):
         self.cancel_all_btn.clicked.connect(self._on_cancel_all_clicked)
         self.cancel_all_btn.hide()
         
-        self.stats_label = QLabel(
-            t("stats_sent_received", self.lang).format(sent=self._sent_text, received=self._received_text)
-        )
+        self.stats_label = QLabel()
         self.stats_label.setObjectName("transferStats")
         stats_font = QFont()
         stats_font.setPointSize(9)
         stats_font.setWeight(QFont.Weight.DemiBold)
         self.stats_label.setFont(stats_font)
+        self.stats_label.setMinimumWidth(1)  # tam metin pencerenin en küçük genişliğini büyütmesin; sığmazsa _render_stats kısaltır
         
         self.count_label = QLabel(t("active_count", self.lang).format(count=0))
         set_tone(self.count_label, "muted")
@@ -461,6 +507,25 @@ class TransferListWidget(QWidget):
         
         layout.addWidget(header)
         layout.addWidget(self.list_widget)
+        self._render_stats()
+
+    def _render_stats(self):
+        """Toplamları yaz; başlık satırına sığmıyorsa kısa biçime geç (dar pencerede "Alınan: 217.2…" kesiliyordu)."""
+        full = t("stats_sent_received", self.lang).format(sent=self._sent_text, received=self._received_text)
+        compact = f"↑ {self._sent_text}  ·  ↓ {self._received_text}"
+        others = [w for w in (self.title_label, self.clear_btn, self.cancel_all_btn, self.count_label)
+                  if not w.isHidden()]
+        layout = self._header.layout()
+        margins = layout.contentsMargins()
+        room = (self._header.width() - margins.left() - margins.right()
+                - sum(w.sizeHint().width() for w in others) - layout.spacing() * len(others))
+        fits = self.stats_label.fontMetrics().horizontalAdvance(full) <= room
+        self.stats_label.setText(full if fits else compact)
+        self.stats_label.setToolTip("" if fits else full)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._render_stats()
     
     def add_transfer(self, transfer: Transfer):
         """Add transfer to list"""
@@ -483,7 +548,8 @@ class TransferListWidget(QWidget):
         widget.resume_clicked.connect(self.resume_transfer.emit)
         widget.cancel_clicked.connect(self.cancel_transfer.emit)
         
-        item = QListWidgetItem()
+        self._seq += 1
+        item = _TransferRow(self._seq)
         item.setSizeHint(QSize(0, 86))
         self.list_widget.insertItem(0, item)
         self.list_widget.setItemWidget(item, widget)
@@ -521,16 +587,6 @@ class TransferListWidget(QWidget):
             # Update count
             self._update_count()
     
-    def clear_completed(self):
-        """Clear completed transfers"""
-        to_remove = []
-        for transfer_id, (_, widget) in self.transfers.items():
-            if widget.transfer.is_complete:
-                to_remove.append(transfer_id)
-        
-        for transfer_id in to_remove:
-            self.remove_transfer(transfer_id)
-    
     def _on_cancel_all_clicked(self):
         """Cancel all active transfers"""
         for transfer_id, (_, widget) in list(self.transfers.items()):
@@ -539,8 +595,21 @@ class TransferListWidget(QWidget):
         self.cancel_all_requested.emit()
         self._update_count()
 
+    def _regroup(self):
+        """Biten transfer devam edenlerin altına iner; yeniden denenen tekrar üste çıkar (kartlar korunur)."""
+        changed = False
+        for item, widget in self.transfers.values():
+            finished = widget.transfer.status in _FINISHED
+            if finished != (item.key[0] == 1):
+                self._seq += 1
+                item.key = (1 if finished else 0, -self._seq)
+                changed = True
+        if changed:
+            self.list_widget.sortItems(Qt.SortOrder.AscendingOrder)
+
     def _update_count(self):
         """Update transfer count label and button visibilities"""
+        self._regroup()
         active_count = sum(1 for _, widget in self.transfers.values() 
                           if widget.transfer.is_active)
         self.count_label.setText(t("active_count", self.lang).format(count=active_count))
@@ -557,6 +626,7 @@ class TransferListWidget(QWidget):
             self.cancel_all_btn.show()
         else:
             self.cancel_all_btn.hide()
+        self._render_stats()
 
     def retranslate(self, lang: str | None = None):
         if lang is not None:
@@ -565,9 +635,6 @@ class TransferListWidget(QWidget):
         self.list_widget.set_hint(t("transfers_empty_title", self.lang), t("transfers_empty_hint", self.lang))
         self.clear_btn.setText(t("clear_list", self.lang))
         self.cancel_all_btn.setText(t("cancel_all_transfers", self.lang))
-        self.stats_label.setText(
-            t("stats_sent_received", self.lang).format(sent=self._sent_text, received=self._received_text)
-        )
         self._update_count()
         for _, widget in self.transfers.values():
             widget.retranslate(self.lang)
@@ -576,7 +643,5 @@ class TransferListWidget(QWidget):
         if hasattr(self, "stats_label"):
             self._sent_text = sent
             self._received_text = received
-            self.stats_label.setText(
-                t("stats_sent_received", self.lang).format(sent=sent, received=received)
-            )
+            self._render_stats()
 
