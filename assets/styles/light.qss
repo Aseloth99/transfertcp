@@ -102,10 +102,13 @@ QPushButton[class="title-button-close"]:pressed {
 }
 
 /* Menu Buttons in Title Bar */
+/* Koyu temayla aynı kabarık kutu (açık temada düz yazı gibi duruyordu, iki tema farklı görünüyordu) */
 QPushButton[class="menu-button"] {
-    background-color: transparent;
-    color: #424242;
-    border: 1px solid transparent;
+    background-color: #ffffff;
+    color: #333333;
+    border: 1px solid #c2c2c2;
+    border-top-color: #dadada;
+    border-left-color: #dadada;
     border-radius: 6px;
     padding: 0px 22px 0px 10px;
     font-size: 8.5pt;
@@ -124,13 +127,17 @@ QPushButton[class="menu-button"]::menu-indicator {
 QPushButton[class="menu-button"]:hover,
 QPushButton[class="menu-button"]:checked,
 QPushButton[class="menu-button"]:checked:hover {
-    background-color: #ececec;
+    background-color: #f0f0f0;
     color: #1a1a1a;
-    border: 1px solid #b5b5b5;
+    border: 1px solid #b0b0b0;
 }
 
 QPushButton[class="menu-button"]:pressed {
-    background-color: #c5c5c5;
+    background-color: #e2e2e2;
+    border-top-color: #a8a8a8;
+    border-left-color: #a8a8a8;
+    border-bottom-color: #d0d0d0;
+    border-right-color: #d0d0d0;
 }
 
 /* General Widget */
@@ -357,13 +364,13 @@ QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
 }
 
 QSpinBox::up-arrow {
-    image: url("__ASSET_ICONS__/arrow_up_dark.svg");
+    image: url("__ASSET_ICONS__/arrow_up_light.svg");
     width: 10px;
     height: 10px;
 }
 
 QSpinBox::down-arrow {
-    image: url("__ASSET_ICONS__/arrow_down_dark.svg");
+    image: url("__ASSET_ICONS__/arrow_down_light.svg");
     width: 10px;
     height: 10px;
 }
@@ -402,7 +409,7 @@ QComboBox::drop-down:hover {
 }
 
 QComboBox::down-arrow {
-    image: url("__ASSET_ICONS__/arrow_down_dark.svg");
+    image: url("__ASSET_ICONS__/arrow_down_light.svg");
     width: 10px;
     height: 10px;
 }
@@ -445,6 +452,7 @@ QCheckBox::indicator:unchecked:hover {
 QCheckBox::indicator:checked {
     background-color: #2196F3;
     border-color: #2196F3;
+    image: url("__ASSET_ICONS__/check.svg");
 }
 
 QCheckBox::indicator:checked:hover {
@@ -1351,4 +1359,58 @@ QGroupBox QCheckBox, QGroupBox QLabel {
 QLabel#localInfo {
     font-size: 8.5pt;
     background: transparent;
+}
+
+/* Transfer geçmişi tablosu */
+QTableWidget#historyTable {
+    background-color: #fafafa;
+    border: 1px solid #b5b5b5;
+    border-radius: 8px;
+    color: #1a1a1a;
+    outline: 0;
+}
+QTableWidget#historyTable::item {
+    padding: 0px 6px;
+    border: none;
+    border-bottom: 1px solid #e6e6e6;
+}
+QTableWidget#historyTable::item:hover {
+    background-color: #eeeeee;
+}
+QTableWidget#historyTable::item:selected {
+    background-color: #1976D2;
+    color: #ffffff;
+}
+QTableWidget#historyTable QHeaderView {
+    background: transparent;
+    border: none;
+}
+QTableWidget#historyTable QHeaderView::section {
+    background-color: #ededed;
+    color: #4a4a4a;
+    border: none;
+    border-bottom: 1px solid #d0d0d0;
+    padding: 6px 22px 6px 10px;  /* soldan hücre yazısıyla hizalı; sağda sıralama oku */
+    font-size: 8.5pt;
+    font-weight: 600;
+}
+QTableWidget#historyTable QHeaderView::section:first {
+    border-top-left-radius: 8px;
+}
+QTableWidget#historyTable QHeaderView::section:last {
+    border-top-right-radius: 8px;
+}
+QTableWidget#historyTable QHeaderView::up-arrow,
+QTableWidget#historyTable QHeaderView::down-arrow {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 6px;
+    width: 10px;
+    height: 10px;
+}
+QTableWidget#historyTable QHeaderView::up-arrow {
+    image: url("__ASSET_ICONS__/arrow_up_light.svg");
+}
+QTableWidget#historyTable QHeaderView::down-arrow {
+    image: url("__ASSET_ICONS__/arrow_down_light.svg");
 }

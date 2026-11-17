@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
+from ..palette import is_dark
+
 _STEPPER_W = 32
 _ARROW_SIZE = 12
+
+
+def arrow_color() -> str:
+    """Ok rengi temaya göre: açık temada açık gri ok açık zeminde neredeyse görünmüyordu."""
+    return "#cbd5e1" if is_dark() else "#4a4a4a"
 
 
 def _arrow_icon(up: bool, color: str = "#cbd5e1") -> QIcon:
@@ -67,7 +74,6 @@ class StepperSpinBox(QWidget):
         self._up_btn.setAutoRepeat(True)
         self._up_btn.setAutoRepeatDelay(280)
         self._up_btn.setAutoRepeatInterval(55)
-        self._up_btn.setIcon(_arrow_icon(True))
         self._up_btn.setIconSize(QSize(_ARROW_SIZE, _ARROW_SIZE))
         self._up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._up_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -78,7 +84,6 @@ class StepperSpinBox(QWidget):
         self._down_btn.setAutoRepeat(True)
         self._down_btn.setAutoRepeatDelay(280)
         self._down_btn.setAutoRepeatInterval(55)
-        self._down_btn.setIcon(_arrow_icon(False))
         self._down_btn.setIconSize(QSize(_ARROW_SIZE, _ARROW_SIZE))
         self._down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._down_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -89,9 +94,21 @@ class StepperSpinBox(QWidget):
 
         layout.addWidget(self._spin, 1)
         layout.addWidget(stepper)
+        self._arrow_color = ""
+        self._refresh_arrows()
 
-    def spin_box(self) -> QSpinBox:
-        return self._spin
+    def _refresh_arrows(self) -> None:
+        color = arrow_color()
+        if color != self._arrow_color:
+            self._arrow_color = color
+            self._up_btn.setIcon(_arrow_icon(True, color))
+            self._down_btn.setIcon(_arrow_icon(False, color))
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        # tema değişince uygulama stil sayfası yeniden kurulur: oklar da yeni temanın rengini alsın
+        if event.type() == QEvent.Type.StyleChange:
+            self._refresh_arrows()
+        super().changeEvent(event)
 
     def setRange(self, minimum: int, maximum: int) -> None:
         self._spin.setRange(minimum, maximum)

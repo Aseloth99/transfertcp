@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPixmap, QPainter, QColor, QFont, QCursor, QGuiApplication
 from PyQt6.QtCore import pyqtSignal, QObject, Qt, QPoint, QSize, QTimer
 from os.path import exists
-from ..utils.locales import configured_language, get_active_language, language_choices, t, create_language_icon
+from ..utils.locales import configured_language, language_choices, t, create_language_icon
 from ..utils.helpers import get_asset_path
 from ..utils.platform_utils import is_windows
 from ..utils.theme import ui_font_families
@@ -281,11 +281,6 @@ class TrayIcon(QObject):
             self.tray.show()
         self.tray.showMessage(title, message, icon, 3000)
         return True
-    
-    def set_tooltip(self, tooltip: str):
-        """Set tooltip text"""
-        if self.tray:
-            self.tray.setToolTip(tooltip)
     
     def update_icon_with_badge(self, count: int):
         """Update icon with transfer count badge"""

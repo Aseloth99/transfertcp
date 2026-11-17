@@ -239,6 +239,8 @@ class SettingsDialog(ChromeDialog):
         label.setObjectName("settingsFieldLabel")
         label.setMinimumWidth(self._LABEL_W)
         label.setMaximumWidth(self._LABEL_W)
+        # QFormLayout etiketi satırın tepesine koyar: alan yüksekliğini alsın ki yazı alanın ortasına hizalansın
+        label.setMinimumHeight(self._FIELD_H)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return label
 
@@ -370,6 +372,7 @@ class SettingsDialog(ChromeDialog):
         folder_inner = self._inner_layout()
         folder_form = self._make_form()
         folder_field = QWidget()
+        folder_field.setStyleSheet("background: transparent;")  # açık temada alanın arkasında gri bant kalıyordu
         folder_field_row = QHBoxLayout(folder_field)
         folder_field_row.setContentsMargins(0, 0, 0, 0)
         folder_field_row.setSpacing(8)
@@ -417,6 +420,7 @@ class SettingsDialog(ChromeDialog):
         transfer_inner.addLayout(transfer_form)
         self.auto_open_check = QCheckBox(t("auto_open", self.lang))
         checkbox_wrap = QWidget()
+        checkbox_wrap.setStyleSheet("background: transparent;")  # kutucuk satırının arkasında gri bant kalıyordu
         checkbox_row = QHBoxLayout(checkbox_wrap)
         checkbox_row.setContentsMargins(0, 4, 0, 0)
         checkbox_row.addWidget(self.auto_open_check)

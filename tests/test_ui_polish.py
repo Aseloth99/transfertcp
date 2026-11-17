@@ -155,19 +155,19 @@ class TransferCardTest(unittest.TestCase):
     def test_badge_follows_direction_and_status(self) -> None:
         send = _transfer()
         card = self._card(send)
-        self.assertEqual(card.direction_label.text(), "↑")
+        self.assertEqual(card.direction_label.glyph(), "arrow_up")
         recv = self._card(_transfer(TransferDirection.RECEIVE))
-        self.assertEqual(recv.direction_label.text(), "↓")
+        self.assertEqual(recv.direction_label.glyph(), "arrow_down")
         send.start()
         send.complete()
         card._update_ui()
-        self.assertEqual(card.direction_label.text(), "✓")
+        self.assertEqual(card.direction_label.glyph(), "check")
         self.assertEqual(card.direction_label.property("badge"), "ok")
         failed = _transfer()
         failed_card = self._card(failed)
         failed.fail("hata")
         failed_card._update_ui()
-        self.assertEqual(failed_card.direction_label.text(), "!")
+        self.assertEqual(failed_card.direction_label.glyph(), "alert")
         self.assertEqual(failed_card.direction_label.property("badge"), "err")
 
     def test_bar_color_comes_from_the_theme_not_a_widget_stylesheet(self) -> None:

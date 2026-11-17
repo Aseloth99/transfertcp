@@ -452,6 +452,7 @@ QCheckBox::indicator:checked {
     border-color: #1976D2;
     border-top-color: #42A5F5;
     border-left-color: #42A5F5;
+    image: url("__ASSET_ICONS__/check.svg");
 }
 
 QCheckBox::indicator:unchecked:hover {
@@ -680,28 +681,27 @@ QPushButton#favoriteBtn:pressed {
     background-color: rgba(255, 193, 7, 0.25);
 }
 
-/* Scroll Bar - Enhanced Neumorphic */
+/* Scroll Bar - nötr gri, açık temadaki gibi ince (vurgu renkli kalın çubuk listede göze batıyordu) */
 QScrollBar:vertical {
     background: #1f1f1f;
-    width: 16px;
-    border-radius: 8px;
-    border: 1px solid #0a0a0a;
-    margin: 3px;
+    width: 14px;
+    border-radius: 7px;
+    border: none;
+    margin: 2px;
 }
 
 QScrollBar::handle:vertical {
-    background: #2196F3;
-    border-radius: 7px;
-    min-height: 35px;
-    border: 1px solid #1976D2;
+    background: #4a4a4a;
+    border-radius: 5px;
+    min-height: 30px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #42A5F5;
+    background: #5f5f5f;
 }
 
 QScrollBar::handle:vertical:pressed {
-    background: #1976D2;
+    background: #747474;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -710,31 +710,30 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
 QScrollBar::groove:vertical {
-    background: #1a1a1a;
+    background: #1f1f1f;
     border: none;
 }
 
 QScrollBar:horizontal {
     background: #1f1f1f;
-    height: 16px;
-    border-radius: 8px;
-    border: 1px solid #0a0a0a;
-    margin: 3px;
+    height: 14px;
+    border-radius: 7px;
+    border: none;
+    margin: 2px;
 }
 
 QScrollBar::handle:horizontal {
-    background: #2196F3;
-    border-radius: 7px;
-    min-width: 35px;
-    border: 1px solid #1976D2;
+    background: #4a4a4a;
+    border-radius: 5px;
+    min-width: 30px;
 }
 
 QScrollBar::handle:horizontal:hover {
-    background: #42A5F5;
+    background: #5f5f5f;
 }
 
 QScrollBar::handle:horizontal:pressed {
-    background: #1976D2;
+    background: #747474;
 }
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
@@ -743,7 +742,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal,
 QScrollBar::groove:horizontal {
-    background: #1a1a1a;
+    background: #1f1f1f;
     border: none;
 }
 
@@ -1285,4 +1284,58 @@ QGroupBox QCheckBox, QGroupBox QLabel {
 QLabel#localInfo {
     font-size: 8.5pt;
     background: transparent;
+}
+
+/* Transfer geçmişi tablosu */
+QTableWidget#historyTable {
+    background-color: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #e8e8e8;
+    outline: 0;
+}
+QTableWidget#historyTable::item {
+    padding: 0px 6px;
+    border: none;
+    border-bottom: 1px solid #2c2c2c;
+}
+QTableWidget#historyTable::item:hover {
+    background-color: #2c2c2c;
+}
+QTableWidget#historyTable::item:selected {
+    background-color: #1976D2;
+    color: #ffffff;
+}
+QTableWidget#historyTable QHeaderView {
+    background: transparent;
+    border: none;
+}
+QTableWidget#historyTable QHeaderView::section {
+    background-color: #2a2a2a;
+    color: #a0a0a0;
+    border: none;
+    border-bottom: 1px solid #3a3a3a;
+    padding: 6px 22px 6px 10px;  /* soldan hücre yazısıyla hizalı; sağda sıralama oku */
+    font-size: 8.5pt;
+    font-weight: 600;
+}
+QTableWidget#historyTable QHeaderView::section:first {
+    border-top-left-radius: 8px;
+}
+QTableWidget#historyTable QHeaderView::section:last {
+    border-top-right-radius: 8px;
+}
+QTableWidget#historyTable QHeaderView::up-arrow,
+QTableWidget#historyTable QHeaderView::down-arrow {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 6px;
+    width: 10px;
+    height: 10px;
+}
+QTableWidget#historyTable QHeaderView::up-arrow {
+    image: url("__ASSET_ICONS__/arrow_up_dark.svg");
+}
+QTableWidget#historyTable QHeaderView::down-arrow {
+    image: url("__ASSET_ICONS__/arrow_down_dark.svg");
 }
