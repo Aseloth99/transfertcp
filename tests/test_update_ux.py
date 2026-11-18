@@ -404,22 +404,30 @@ class OpenDialogTest(unittest.TestCase):
 
 
 class TitleBarHasNoPillTest(unittest.TestCase):
-    """Bekleyen sürüm başlık çubuğunda değil Ayarlar'da görünür (FlexiKey gibi)."""
+    """Başlıkta yazılı "Güncelle · vX" hapı yok; yalnızca pencere düğmeleri boyutunda, yazısız küçük ↑ simgesi
+    (bekleyen sürüm varken). Ayrıntılı düğme Ayarlar'da durur (FlexiKey gibi)."""
 
     @classmethod
     def setUpClass(cls):
         cls.app_ = QApplication.instance() or QApplication([])
 
-    def test_title_bar_has_no_update_button(self):
+    def test_title_bar_has_no_update_pill(self):
         from PyQt6.QtWidgets import QPushButton, QWidget
 
         parent = QWidget()
         parent.showMinimized = lambda: None
         bar = CustomTitleBar(parent)
-        self.assertFalse(hasattr(bar, "update_btn"))
         self.assertFalse(hasattr(bar, "set_update_available"))
         texts = [b.text() for b in bar.findChildren(QPushButton)]
-        self.assertEqual(texts, ["−", "□", "×"], "başlık çubuğunda yalnızca pencere düğmeleri kalır")
+        self.assertEqual(texts, ["", "−", "", "×"], "↑ ve ekranı kapla vektör işaretli; hiçbir düğmede sürüm yazısı yok")
+        self.assertTrue(bar.update_btn.isHidden(), "bekleyen sürüm yokken ↑ görünmez")
+        bar.set_update_version("9.9.9")
+        self.assertFalse(bar.update_btn.isHidden())
+        self.assertEqual(bar.update_btn.text(), "")
+        bar.update_btn.ensurePolished()
+        bar.minimize_btn.ensurePolished()  # QSS en küçük/en büyük boyutu cilada uygulanır
+        self.assertEqual(bar.update_btn.size(), bar.minimize_btn.size())
+        self.assertFalse([b.text() for b in bar.findChildren(QPushButton) if "9.9.9" in b.text()])
 
 
 class LocaleTest(unittest.TestCase):

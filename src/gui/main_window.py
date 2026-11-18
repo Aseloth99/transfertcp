@@ -13,9 +13,11 @@ from .device_list import DeviceListWidget
 from .transfer_item import TransferListWidget
 from .widgets.glyph_icons import glyph_color, glyph_icon
 from .widgets.tone import set_tone
+from .widgets.title_glyphs import TitleGlyphButton, update_ink
 from .chrome_dialog import ChromeDialog
 from .message_box import MessageBox
-from .palette import ACCENTS, DEFAULT_ACCENT, accent_color, accent_key, accent_label, is_dark, set_accent_override
+from .palette import (ACCENTS, DEFAULT_ACCENT, accent_color, accent_key, accent_label, accent_spec, is_dark,
+                      set_accent_override)
 from .settings import SettingsDialog
 from ..models.device import Device
 from ..models.transfer import Transfer
@@ -244,35 +246,86 @@ class CustomTitleBar(QWidget):
         
         layout.addStretch(1)
 
+        # Bekleyen güncelleme: küçültmenin hemen solunda küçük ↑ (vurgu renginde, yalnızca simge).
+        # Ayarlar'daki düğme ve tepsi satırıyla aynı pencereyi açar; kendiliğinden kurulum başlatmaz.
+        self._lang = "tr"
+        self._update_version = ""
+        self.update_btn = TitleGlyphButton("update")
+        self.update_btn.setFixedSize(28, 24)
+        self.update_btn.setProperty("class", "title-button")
+        self.update_btn.clicked.connect(self._on_update_clicked)
+        self.update_btn.setVisible(False)
+
         # Window controls
         self.minimize_btn = QPushButton("−")
         self.minimize_btn.setFixedSize(28, 24)
         self.minimize_btn.setProperty("class", "title-button")
         self.minimize_btn.clicked.connect(self.parent_window.showMinimized)
-        
-        self.maximize_btn = QPushButton("□")
+
+        # Ekranı kapla / geri yükle: işaret pencere durumunu gösterir (vektör, `refresh_window_state`)
+        self.maximize_btn = TitleGlyphButton("maximize")
         self.maximize_btn.setFixedSize(28, 24)
         self.maximize_btn.setProperty("class", "title-button")
         self.maximize_btn.clicked.connect(self._toggle_maximize)
-        
+
         self.close_btn = QPushButton("×")
         self.close_btn.setFixedSize(28, 24)
         self.close_btn.setProperty("class", "title-button-close")
         self.close_btn.clicked.connect(self.parent_window.close)
-        
+
+        # "−" ve "×" yazı işaretleri (13/16 pt) düğme ortasının ~2 px altında durur: vektör işaretler aynı hizada
+        for button in (self.update_btn, self.maximize_btn):
+            button.set_glyph_offset(2)
+
+        layout.addWidget(self.update_btn)
         layout.addWidget(self.minimize_btn)
         layout.addWidget(self.maximize_btn)
         layout.addWidget(self.close_btn)
-        
+
         # Set fixed height and ensure vertical centering below the accent strip
         self.setFixedHeight(38)
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.refresh_update_ink()
         self.retranslate("tr")
 
     def retranslate(self, lang: str = "tr"):
+        self._lang = lang
         self.minimize_btn.setToolTip(t("window_minimize", lang))
-        self.maximize_btn.setToolTip(t("window_maximize", lang))
         self.close_btn.setToolTip(t("window_close", lang))
+        self.refresh_window_state()
+        self._refresh_update_texts()
+
+    def _is_maximized(self) -> bool:
+        window = self.parent_window
+        return bool(window is not None and hasattr(window, "isMaximized") and window.isMaximized())
+
+    def refresh_window_state(self) -> None:
+        """Ekranı kapla / geri yükle işareti ve ipucu: her pencere durumu değişiminde çağrılır (changeEvent)."""
+        maximized = self._is_maximized()
+        self.maximize_btn.set_kind("restore" if maximized else "maximize")
+        tip = t("window_restore" if maximized else "window_maximize", self._lang)
+        self.maximize_btn.setToolTip(tip)
+        self.maximize_btn.setAccessibleName(tip)
+
+    def set_update_version(self, version: str = "") -> None:
+        """Bekleyen güncelleme sürümü (boş: yok → ↑ gizli)."""
+        self._update_version = str(version or "")
+        self._refresh_update_texts()
+        self.update_btn.setVisible(bool(self._update_version))
+
+    def _refresh_update_texts(self) -> None:
+        self.update_btn.setAccessibleName(t("title_update_name", self._lang))
+        tip = t("update_pill_tip", self._lang).format(version=self._update_version) if self._update_version else ""
+        self.update_btn.setToolTip(tip)
+
+    def refresh_update_ink(self) -> None:
+        """↑ rengi: seçili vurgu (tema/vurgu değişince yeniden okunur)."""
+        self.update_btn.set_ink(update_ink(is_dark(), accent_spec()))
+
+    def _on_update_clicked(self) -> None:
+        window = self.parent_window
+        if window is not None and hasattr(window, "show_pending_update"):
+            window.show_pending_update()
 
     def _toggle_maximize(self):
         if self.parent_window.isMaximized():
@@ -956,6 +1009,8 @@ class MainWindow(QMainWindow):
                         self.device_list._update_all_widget_styles()
                     if hasattr(self, "drop_zone"):
                         self.drop_zone.refresh_icon()
+                    if hasattr(self, "title_bar"):
+                        self.title_bar.refresh_update_ink()
                     self._update_accent_menu_checks(accent_name)
                     self._update_lang_menu_checks()
                     self._refresh_menu_icons()
@@ -1268,13 +1323,15 @@ class MainWindow(QMainWindow):
         AboutDialog(self, self.lang, checker.get_current_version()).exec()
 
     def set_update_available(self, version: str = ""):
-        """Bekleyen güncellemenin sürümü (boş: yok). Açık Ayarlar penceresi varsa "Güncelle · vX" düğmesi hemen güncellenir."""
+        """Bekleyen güncellemenin sürümü (boş: yok). Başlıktaki ↑ ve (açıksa) Ayarlar'daki "Güncelle · vX" düğmesi
+        hemen güncellenir."""
         self.update_version = version or ""
+        self.title_bar.set_update_version(self.update_version)
         for dialog in self.findChildren(SettingsDialog):
             dialog.show_pending_update(self.update_version)
 
     def show_pending_update(self):
-        """Ayarlar'daki düğme: güncelleme ayrıntı penceresini açtırır (tepsi satırı doğrudan uygulamaya bağlı)."""
+        """Ayarlar'daki düğme ve başlıktaki ↑: güncelleme ayrıntı penceresini açtırır (tepsi satırı doğrudan uygulamaya bağlı)."""
         self.update_requested.emit()
 
     def update_connection_status(self, connected: bool):
@@ -1366,11 +1423,9 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event: QEvent):
         try:
             if event.type() == QEvent.Type.WindowStateChange:
-                if hasattr(self, "title_bar") and hasattr(self.title_bar, "maximize_btn"):
-                    if self.isMaximized():
-                        self.title_bar.maximize_btn.setText("❐")
-                    else:
-                        self.title_bar.maximize_btn.setText("□")
+                # Düğme, başlığa çift tıklama, Win+Yukarı/Aşağı, Aero Snap, görev çubuğu: hepsi buradan geçer
+                if hasattr(self, "title_bar"):
+                    self.title_bar.refresh_window_state()
                 self._position_size_grip()
         except Exception as e:
             self.logger.error(f"Error in changeEvent: {e}")

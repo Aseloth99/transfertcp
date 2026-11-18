@@ -111,14 +111,17 @@ class CloseAndQuitTest(_QtCase):
         self.assertNotIn("already_running", source)
 
     def test_maximize_glyph_pair_is_square_and_restore(self) -> None:
+        """Vektör işaret (yazı değil): durum değişimi düğmeden gelmese de (Win+Yukarı, Aero Snap) işaret değişir."""
         window = self._window()
-        self.assertEqual(window.title_bar.maximize_btn.text(), "□")
+        button = window.title_bar.maximize_btn
+        self.assertEqual(button.text(), "")
+        self.assertEqual(button.kind(), "maximize")
         with mock.patch.object(window, "isMaximized", return_value=True):
             window.changeEvent(QEvent(QEvent.Type.WindowStateChange))
-        self.assertEqual(window.title_bar.maximize_btn.text(), "❐")
+        self.assertEqual(button.kind(), "restore")
         with mock.patch.object(window, "isMaximized", return_value=False):
             window.changeEvent(QEvent(QEvent.Type.WindowStateChange))
-        self.assertEqual(window.title_bar.maximize_btn.text(), "□")
+        self.assertEqual(button.kind(), "maximize")
 
 
 class SendNeedsAReadyTargetTest(_QtCase):

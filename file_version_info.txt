@@ -4,8 +4,8 @@
 # Surum, src/utils/updater.py UpdateChecker.CURRENT_VERSION ile ayni olmali (tests/test_packaging_version.py denetler).
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 2, 0),
-    prodvers=(1, 0, 2, 0),
+    filevers=(1, 0, 3, 0),
+    prodvers=(1, 0, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -19,12 +19,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'TransferTCP'),
          StringStruct('FileDescription', 'TransferTCP'),
-         StringStruct('FileVersion', '1.0.2.0'),
+         StringStruct('FileVersion', '1.0.3.0'),
          StringStruct('InternalName', 'TransferTCP'),
          StringStruct('LegalCopyright', '(c) 2026 TransferTCP'),
          StringStruct('OriginalFilename', 'TransferTCP.exe'),
          StringStruct('ProductName', 'TransferTCP'),
-         StringStruct('ProductVersion', '1.0.2.0')])
+         StringStruct('ProductVersion', '1.0.3.0')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
