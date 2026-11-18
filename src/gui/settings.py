@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRectF, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QAbstractButton,
@@ -497,9 +497,18 @@ class SettingsDialog(ChromeDialog):
         from .widgets.update_check_ui import UpdateCheckAnimator
         self.update_check = UpdateCheckAnimator(self.check_update_btn, self.update_status, self)
         self.check_update_btn.clicked.connect(self._check_updates_manually)
+        # Yeni sürüm varsa durum metni yerine bu düğme görünür; güncelleme penceresini açar (tıklamak kurmaz)
+        self.update_open_btn = QPushButton()
+        self.update_open_btn.setObjectName("settingsFooterBtn")
+        self.update_open_btn.setProperty("class", "primary")
+        self.update_open_btn.setFixedHeight(self._FIELD_H)
+        self.update_open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_open_btn.clicked.connect(self._open_pending_update)
+        self.update_open_btn.setVisible(False)
         update_inner.addWidget(self.auto_update_check)
         update_inner.addWidget(self.auto_update_install)
         update_inner.addWidget(self.update_status)
+        update_inner.addWidget(self.update_open_btn)
         update_inner.addWidget(self.check_update_btn)
         update_group.setLayout(update_inner)
 
@@ -726,6 +735,7 @@ class SettingsDialog(ChromeDialog):
 
         self._checking_updates = True
         self._check_failed = False
+        self.update_open_btn.setVisible(False)  # denetim bitince yeni sürüm hâlâ varsa geri gelir
         self.update_status.setVisible(True)
         self.update_check.start(t("checking_updates", self.lang))
         checker.check_for_updates(show_message=True)
@@ -735,11 +745,12 @@ class SettingsDialog(ChromeDialog):
         return pending if isinstance(pending, str) else ""
 
     def _show_update_status(self, failed: bool = False, checked: bool = False):
-        """Pop-up yerine ayarlardaki durum satırı: yeni sürüm / güncel / denetlenemedi."""
+        """Pop-up yerine ayarlardaki durum satırı: güncel / denetlenemedi; yeni sürüm varsa satır yerine düğme."""
         pending = self._pending_update_version()
         if pending:
-            text = t("update_new_version", self.lang).format(version=pending)
-        elif failed:
+            self.show_pending_update(pending)
+            return
+        if failed:
             text = t("update_status_failed", self.lang)
         elif checked:
             from ..utils.updater import UpdateChecker
@@ -749,11 +760,30 @@ class SettingsDialog(ChromeDialog):
         self.update_status.setText(text)
         self.update_status.setVisible(bool(text))
 
+    def show_pending_update(self, version: str):
+        """Yeni sürüm varsa "↑ Güncelle · vX" düğmesi durum metninin yerini alır (FlexiKey'deki gibi)."""
+        version = str(version or "")
+        self.update_open_btn.setVisible(bool(version))
+        self.update_status.setVisible(not version and bool(self.update_status.text()))
+        if version:
+            self.update_open_btn.setText("↑  " + t("update_pill", self.lang).format(version=version))
+            self.update_open_btn.setToolTip(t("update_pill_tip", self.lang).format(version=version))
+
+    def _open_pending_update(self):
+        """Ayarlar kapanır (kaydedilmemiş değişiklikler uygulanmaz) ve güncelleme penceresi açılır: Ayarlar kalıcı
+        (modal) olduğundan üstünde açılan güncelleme penceresi tıklanamazdı."""
+        window = self.parent()
+        self.reject()
+        if window is not None and hasattr(window, "show_pending_update"):
+            QTimer.singleShot(0, window.show_pending_update)
+
     def _on_manual_update_done(self):
         self._checking_updates = False
         pending = self._pending_update_version()
         if pending:
-            self.update_check.finish("new", t("update_new_version", self.lang).format(version=pending))
+            self.update_check.cancel()
+            self.update_status.clear()  # "Kontrol ediliyor…" sonradan geri görünmesin
+            self.show_pending_update(pending)
         elif getattr(self, "_check_failed", False):
             self.update_check.finish("fail", t("update_status_failed", self.lang))
         else:

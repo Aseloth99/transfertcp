@@ -33,25 +33,6 @@ QWidget#CustomTitleBar QLabel {
     font-weight: 600;
 }
 
-QPushButton#updatePill {
-    background-color: #1976D2;
-    color: #ffffff;
-    border: 1px solid #1976D2;
-    border-top-color: #42A5F5;
-    border-left-color: #42A5F5;
-    border-radius: 12px;
-    padding: 0px 14px;
-    margin: 0px 8px 0px 0px;
-    min-height: 24px;
-    max-height: 24px;
-    font-size: 8.5pt;
-    font-weight: 700;
-}
-
-QPushButton#updatePill:hover {
-    background-color: #2196F3;
-}
-
 QPushButton[class="title-button"] {
     background-color: transparent;
     color: #4a4a4a;

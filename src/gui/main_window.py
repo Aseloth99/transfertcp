@@ -197,14 +197,10 @@ class DropZone(QFrame):
 class CustomTitleBar(QWidget):
     """Custom title bar for frameless window"""
 
-    update_clicked = pyqtSignal()
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
         self._old_pos = None
-        self._update_version = ""
-        self._lang = "tr"
         self.setObjectName("CustomTitleBar")
         self._setup_ui()
     
@@ -236,11 +232,6 @@ class CustomTitleBar(QWidget):
         layout.addWidget(self.icon_label)
         layout.addWidget(self.title_label)
 
-        # Güncelleme düğmesi sağda belirince menü ortada kalsın diye sol tarafa eş genişlikte boşluk eklenir
-        self._left_balance = QWidget()
-        self._left_balance.setFixedWidth(0)
-        layout.addWidget(self._left_balance)
-
         layout.addStretch(1)
         
         # Menu buttons (will be populated by parent window) - centered
@@ -252,15 +243,6 @@ class CustomTitleBar(QWidget):
         layout.addWidget(self.menu_container)
         
         layout.addStretch(1)
-        
-        # Güncelleme düğmesi: sessiz denetim yeni sürüm bulursa görünür (pop-up yok)
-        self.update_btn = QPushButton()
-        self.update_btn.setObjectName("updatePill")
-        self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.update_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.update_btn.clicked.connect(self.update_clicked.emit)
-        self.update_btn.setVisible(False)
-        layout.addWidget(self.update_btn)
 
         # Window controls
         self.minimize_btn = QPushButton("−")
@@ -288,27 +270,9 @@ class CustomTitleBar(QWidget):
         self.retranslate("tr")
 
     def retranslate(self, lang: str = "tr"):
-        self._lang = lang
         self.minimize_btn.setToolTip(t("window_minimize", lang))
         self.maximize_btn.setToolTip(t("window_maximize", lang))
         self.close_btn.setToolTip(t("window_close", lang))
-        if hasattr(self, "update_btn"):
-            self._apply_update_text()
-
-    def set_update_available(self, version: str = "") -> None:
-        """"Güncelle · vX" düğmesini göster/gizle (version boşsa gizler)."""
-        self._update_version = version or ""
-        self._apply_update_text()
-        self.update_btn.setVisible(bool(self._update_version))
-        self._left_balance.setFixedWidth(
-            self.update_btn.sizeHint().width() + 8 if self._update_version else 0
-        )
-
-    def _apply_update_text(self) -> None:
-        if not self._update_version:
-            return
-        self.update_btn.setText(t("update_pill", self._lang).format(version=self._update_version))
-        self.update_btn.setToolTip(t("update_pill_tip", self._lang).format(version=self._update_version))
 
     def _toggle_maximize(self):
         if self.parent_window.isMaximized():
@@ -351,7 +315,7 @@ class MainWindow(QMainWindow):
     pause_transfer_requested = pyqtSignal(str)  # transfer_id
     resume_transfer_requested = pyqtSignal(str)
     cancel_transfer_requested = pyqtSignal(str)
-    update_requested = pyqtSignal()  # başlık çubuğundaki "Güncelle" düğmesi
+    update_requested = pyqtSignal()  # Ayarlar'daki "Güncelle · vX" düğmesi
     refresh_devices_requested = pyqtSignal()  # New signal
     manual_device_requested = pyqtSignal(str, str, int)  # ip, görünen ad, port — yayınsız ağlar için
     device_remove_requested = pyqtSignal(object)  # Device — listeden kaldırma
@@ -361,6 +325,7 @@ class MainWindow(QMainWindow):
         self.config = get_config()
         self.lang = get_active_language(self.config)
         self.current_theme = "dark"
+        self.update_version = ""  # bekleyen güncelleme (boş: yok); Ayarlar'da düğme olarak görünür
         from ..utils.logger import get_logger
         self.logger = get_logger()
         
@@ -405,7 +370,6 @@ class MainWindow(QMainWindow):
     def _setup_title_bar(self):
         """Setup custom title bar"""
         self.title_bar = CustomTitleBar(self)
-        self.title_bar.update_clicked.connect(self.update_requested.emit)
         # Title bar will be added to main layout in _setup_ui
     
     def _setup_ui(self):
@@ -1304,9 +1268,14 @@ class MainWindow(QMainWindow):
         AboutDialog(self, self.lang, checker.get_current_version()).exec()
 
     def set_update_available(self, version: str = ""):
-        """Başlık çubuğundaki "Güncelle · vX" düğmesini göster/gizle."""
+        """Bekleyen güncellemenin sürümü (boş: yok). Açık Ayarlar penceresi varsa "Güncelle · vX" düğmesi hemen güncellenir."""
         self.update_version = version or ""
-        self.title_bar.set_update_available(version)
+        for dialog in self.findChildren(SettingsDialog):
+            dialog.show_pending_update(self.update_version)
+
+    def show_pending_update(self):
+        """Ayarlar'daki düğme: güncelleme ayrıntı penceresini açtırır (tepsi satırı doğrudan uygulamaya bağlı)."""
+        self.update_requested.emit()
 
     def update_connection_status(self, connected: bool):
         """Bağlantı durumu (eski status bar etiketi artık kullanılmıyor)."""

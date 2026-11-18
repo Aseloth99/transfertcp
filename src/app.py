@@ -1151,7 +1151,7 @@ class Application(QObject):
 
     def _on_update_available(self, version: str, download_url: str, release_notes: str,
                             is_mandatory: bool, file_size: int, checksum: str):
-        """Sessiz denetim yeni sürüm buldu: pop-up AÇILMAZ. Sürüm başlık çubuğundaki "Güncelle" düğmesinde ve
+        """Sessiz denetim yeni sürüm buldu: pop-up AÇILMAZ. Sürüm Ayarlar'daki "Güncelle" düğmesinde ve
         tepsinin en üstünde ("Güncelle · vX") görünür; "otomatik kur" açıksa uygulama kullanılmıyorken kendiliğinden kurulur."""
         ready = getattr(self, '_ready_update', None)
         if ready and ready.get('version') != version:
@@ -1534,7 +1534,7 @@ class Application(QObject):
             self.tray_icon.set_update_available(True, self._pending_update['version'])
 
     def show_pending_update(self):
-        """Başlık çubuğundaki düğmeden / tepsiden seçilen güncelleme penceresini aç."""
+        """Ayarlar'daki düğmeden / tepsiden seçilen güncelleme penceresini aç."""
         if not self._pending_update:
             return
         self._open_update_dialog()

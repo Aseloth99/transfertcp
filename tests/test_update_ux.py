@@ -1,4 +1,4 @@
-"""Güncelleme deneyimi: pop-up yok; başlık çubuğunda ve tepsinin en üstünde "Güncelle · vX"; kullanılmıyorken otomatik kurulum."""
+"""Güncelleme deneyimi: pop-up yok; Ayarlar'da ve tepsinin en üstünde "Güncelle · vX"; kullanılmıyorken otomatik kurulum."""
 
 import os
 import sys
@@ -403,40 +403,23 @@ class OpenDialogTest(unittest.TestCase):
         self.assertIn("downloading", _DialogStub.last.calls)
 
 
-class TitleBarPillTest(unittest.TestCase):
+class TitleBarHasNoPillTest(unittest.TestCase):
+    """Bekleyen sürüm başlık çubuğunda değil Ayarlar'da görünür (FlexiKey gibi)."""
+
     @classmethod
     def setUpClass(cls):
         cls.app_ = QApplication.instance() or QApplication([])
 
-    def _bar(self):
-        window = types.SimpleNamespace(
-            showMinimized=lambda: None, close=lambda: None,
-            isMaximized=lambda: False,
-        )
-        from PyQt6.QtWidgets import QWidget
+    def test_title_bar_has_no_update_button(self):
+        from PyQt6.QtWidgets import QPushButton, QWidget
 
         parent = QWidget()
         parent.showMinimized = lambda: None
-        return CustomTitleBar(parent), parent, window
-
-    def test_pill_shows_version_follows_language_and_hides(self):
-        bar, _parent, _ = self._bar()
-        self.assertTrue(bar.update_btn.isHidden())
-        bar.set_update_available("1.2.3")
-        self.assertFalse(bar.update_btn.isHidden())
-        self.assertEqual(bar.update_btn.text(), "Güncelle · v1.2.3")
-        bar.retranslate("en")
-        self.assertEqual(bar.update_btn.text(), "Update · v1.2.3")
-        bar.set_update_available("")
-        self.assertTrue(bar.update_btn.isHidden())
-
-    def test_click_emits_signal(self):
-        bar, _parent, _ = self._bar()
-        got = []
-        bar.update_clicked.connect(lambda: got.append(1))
-        bar.set_update_available("1.2.3")
-        bar.update_btn.click()
-        self.assertEqual(got, [1])
+        bar = CustomTitleBar(parent)
+        self.assertFalse(hasattr(bar, "update_btn"))
+        self.assertFalse(hasattr(bar, "set_update_available"))
+        texts = [b.text() for b in bar.findChildren(QPushButton)]
+        self.assertEqual(texts, ["−", "□", "×"], "başlık çubuğunda yalnızca pencere düğmeleri kalır")
 
 
 class LocaleTest(unittest.TestCase):
@@ -444,7 +427,7 @@ class LocaleTest(unittest.TestCase):
         from src.utils.locales import t
 
         for lang in ("tr", "en"):
-            for key in ("update_pill", "update_pill_tip", "update_new_version", "update_status_current",
+            for key in ("update_pill", "update_pill_tip", "update_status_current",
                         "update_status_failed", "auto_update_install", "update_auto_failed", "check_now",
                         "tray_update_now", "update_size_line", "update_failed_inline", "update_retry",
                         "update_installed_toast", "update_no_write", "update_blocked_inline", "update_busy_inline",
