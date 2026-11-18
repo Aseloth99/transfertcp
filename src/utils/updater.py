@@ -79,7 +79,7 @@ class UpdateChecker(QObject):
     notice_received = pyqtSignal(object)  # remote_notice.Notice (duyuru satırı)
 
     # Update check configuration - Edit these values directly in this file
-    CURRENT_VERSION = "1.0.2"  # Update this version number when releasing
+    CURRENT_VERSION = "1.0.3"  # Update this version number when releasing
     UPDATE_CHECK_URL = "https://macik.com.tr/api/updates/check"  
     APP_NAME = "TransferTCP"
     CHECK_INTERVAL_HOURS = 24  # Check once per day

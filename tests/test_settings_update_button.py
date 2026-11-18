@@ -82,10 +82,15 @@ class SettingsUpdateButtonTest(unittest.TestCase):
         self.assertEqual(dialog.update_open_btn.property("class"), "primary")
 
     def test_title_bar_has_no_update_pill(self):
+        """Başlıkta yazılı hap yok; yalnızca pencere düğmesi boyutunda, yazısız ↑ simgesi."""
         self.window.set_update_available("1.2.3")
-        texts = [b.text() for b in self.window.title_bar.findChildren(QPushButton)]
+        bar = self.window.title_bar
+        texts = [b.text() for b in bar.findChildren(QPushButton)]
         self.assertFalse([x for x in texts if "1.2.3" in x], texts)
         self.assertEqual(self.window.update_version, "1.2.3", "sürüm yine pencerede tutulur")
+        self.assertFalse(bar.update_btn.isHidden())
+        self.assertEqual(bar.update_btn.text(), "")
+        self.assertEqual(bar.update_btn.size(), bar.minimize_btn.size())
 
     def test_no_pending_version_no_button(self):
         dialog = self._dialog()
