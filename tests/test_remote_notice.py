@@ -117,6 +117,10 @@ class NoticeBarTest(unittest.TestCase):
         host = QWidget()
         QVBoxLayout(host).addWidget(bar := NoticeBar())
         host.show()
+        # geçiş animasyonu kapalı (Windows "animasyonları göster" kapalı gibi): hemen gizlenir; animasyonlu yol test_ui_feedback'te
+        patcher = mock.patch("src.gui.notice_bar._system_animations_enabled", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.assertFalse(bar.isVisible(), "no notice, no bar")
         bar.show_notice(rn.Notice("n1", "<b>Merhaba</b>", "https://macik.com.tr/x"))
         self.assertTrue(bar.isVisible())

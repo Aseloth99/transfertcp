@@ -32,6 +32,19 @@ from src.utils.locales import get_active_language, t
 from typing import Optional
 
 
+def _refresh_taskbar(app, active=None) -> None:
+    """Görev çubuğu düğmesindeki toplam aktarım ilerlemesi (Windows). Hata asla aktarım akışını bozmaz."""
+    try:
+        if active is None:
+            active = app.transfer_manager.get_active_transfers()
+        app.window.refresh_taskbar_progress(list(active))
+    except Exception as error:
+        try:
+            app.logger.debug(f"Görev çubuğu ilerlemesi güncellenemedi: {error}")
+        except Exception:
+            pass
+
+
 UPDATE_RESTART_BIND_GRACE = 4.0  # sn: güncelleme yeniden başlatmasında tercih edilen portu bağlamak için en çok bekleme
 
 
@@ -121,6 +134,7 @@ class Application(QObject):
         # GUI components
         install_message_box()  # özel hata/bilgi/soru kutusu: TCP paleti, simgesi ve dili (pencereden ÖNCE)
         self.window = MainWindow()
+        self.window.enable_geometry_memory()  # son boyut/konum/ekranı kapla ve bölme genişliği
         self.window.update_checker = self.update_checker  # Pass reference
         self.update_checker.notice_received.connect(self.window.show_notice)
         self.tray_icon = TrayIcon(lang=get_active_language(self.config))
@@ -145,9 +159,10 @@ class Application(QObject):
         self.window.pause_transfer_requested.connect(self._on_pause_transfer)
         self.window.resume_transfer_requested.connect(self._on_resume_transfer)
         self.window.cancel_transfer_requested.connect(self._on_cancel_transfer)
-        self.window.refresh_devices_requested.connect(self._on_refresh_devices)
+        self.window.refresh_devices_requested.connect(self._on_user_refresh_devices)
         self.window.manual_device_requested.connect(self._on_manual_device)
         self.window.device_remove_requested.connect(self._on_remove_device)
+        self.window.device_restore_requested.connect(self._on_restore_device)
 
         # Tray icon signals
         self.tray_icon.show_window.connect(self._show_window)
@@ -423,16 +438,11 @@ class Application(QObject):
             existing = widget.device
             if existing.ip == device.ip and existing.port != device.port:
                 self.window.remove_device(existing)
-        self.window.add_device(device)
-        lang = get_active_language(self.config)
-        if device.is_online:
-            self.window.show_status_message(t("device_joined", lang).format(name=device.name))
+        self.window.add_device(device)  # katılan cihaz listede belirir: ayrıca ileti yok (gürültü olmasın)
 
     def _handle_device_lost_gui(self, device: Device):
         """Handle device lost - GUI updates (main thread)"""
-        self.window.update_device(device)
-        lang = get_active_language(self.config)
-        self.window.show_status_message(t("device_left", lang).format(name=device.name))
+        self.window.update_device(device)  # kart "Çevrimdışı" olur: ayrıca ileti yok
 
     def _on_manual_device(self, ip: str, display_name: str, port: int):
         """IP ile eklenen cihazı hemen listele, arka planda yokla."""
@@ -440,8 +450,7 @@ class Application(QObject):
         pending = self.discovery.add_manual_device(ip, port, display_name)
         pending.custom_name = display_name if display_name != ip else None
         self.database.save_device(pending.to_dict())
-        self.window.add_device(pending)
-        self.window.show_status_message(t("probing_device", lang).format(ip=ip), 4000)
+        self.window.add_device(pending)  # kart hemen görünür; ulaşılamazsa "yanıt vermedi" iletisi gelir
 
         import threading
 
@@ -478,6 +487,13 @@ class Application(QObject):
             self.discovery.forget_device(device.ip, device.port)
         except Exception as e:
             self.logger.error(f"Remove device error: {e}")
+
+    def _on_restore_device(self, device: Device):
+        """Kaldırma "Geri Al" ile geri alındı: keşif cihazı yeniden tanısın (engel kalkar)."""
+        try:
+            self.discovery.restore_device(device)
+        except Exception as e:
+            self.logger.error(f"Restore device error: {e}")
 
     def _handle_manual_probe_failed_gui(self, ip: str, port: int):
         """Yoklama başarısız — ana iş parçacığında bilgi ver."""
@@ -564,29 +580,16 @@ class Application(QObject):
                 if folder_key and folder_key in self._folder_transfers:
                     self._folder_transfers[folder_key]['transfer_ids'].append(transfer.transfer_id)
 
-        # Show status message
-        if len(files) > 0:
-            lang = get_active_language(self.config)
-            if folder_path:
-                folder_name = basename(folder_path)
-                self.window.show_status_message(
-                    t("sending_folder", lang).format(folder=folder_name, count=len(files), device=device.name)
-                )
-            else:
-                self.window.show_status_message(
-                    t("sending_files", lang).format(count=len(files), device=device.name)
-                )
+        # Kartlar hemen listede görünür: ayrıca "gönderiliyor" iletisi gösterilmez
+        _refresh_taskbar(self)
 
     def _on_pause_transfer(self, transfer_id: str):
         """Handle pause transfer request"""
         transfer = self.transfer_manager.get_transfer(transfer_id)
         if transfer:
             self.logger.info(f"Pausing transfer (local): {transfer.filename}")
-            self.transfer_manager.pause_transfer(transfer_id)
-            lang = get_active_language(self.config)
-            self.window.show_status_message(
-                t("transfer_paused", lang).format(filename=transfer.filename), 2000
-            )
+            self.transfer_manager.pause_transfer(transfer_id)  # kart "Duraklatıldı" gösterir
+            _refresh_taskbar(self)
 
     def _on_resume_transfer(self, transfer_id: str):
         """Handle resume transfer request"""
@@ -594,10 +597,7 @@ class Application(QObject):
         if transfer:
             self.logger.info(f"Resuming transfer: {transfer.filename}")
             self.transfer_manager.resume_transfer(transfer_id)
-            lang = get_active_language(self.config)
-            self.window.show_status_message(
-                t("transfer_resumed", lang).format(filename=transfer.filename), 2000
-            )
+            _refresh_taskbar(self)
 
     def _cleanup_incomplete_file(self, transfer: Transfer):
         """Clean up the incomplete .part file on failure or cancel.
@@ -650,10 +650,12 @@ class Application(QObject):
         # database is updated on start and final completion to avoid disk I/O stalls.
 
         # Update tray icon only when active transfer count actually changes
-        active_count = len(self.transfer_manager.get_active_transfers())
+        active = self.transfer_manager.get_active_transfers()
+        active_count = len(active)
         if getattr(self, '_last_badge_count', -1) != active_count:
             self._last_badge_count = active_count
             self.tray_icon.update_icon_with_badge(active_count)
+        _refresh_taskbar(self, active)
 
 
     def _cleanup_stale_folder_transfers(self):
@@ -897,14 +899,7 @@ class Application(QObject):
                             # Ensure Qt repaints widgets on screen before native toast is presented
                             QApplication.processEvents()
                             self._show_folder_completion_toast(folder_path, folder_info, transfer)
-                        else:
-                            # Individual file in folder - just update status, no toast
-                            filename = getattr(transfer, 'filename', t("file", lang))
-                            self.window.show_status_message(
-                                t("file_complete_progress", lang).format(
-                                    filename=filename, completed=completed, total=total
-                                )
-                            )
+                        # Klasördeki tek tek dosyalar için ileti yok: kartlar gösteriyor, klasör bitince tek ileti gelir
                     except Exception as toast_error:
                         self.logger.error(f"Error showing folder transfer toast: {toast_error}", exc_info=True)
                         filename = getattr(transfer, 'filename', t("file", lang))
@@ -916,11 +911,7 @@ class Application(QObject):
                     has_relative_path = hasattr(transfer, 'relative_path') and transfer.relative_path is not None
 
                     if has_relative_path:
-                        # Folder transfer but not tracked - just show status, no toast
-                        filename = getattr(transfer, 'filename', t("file", lang))
-                        self.window.show_status_message(
-                            t("file_complete", lang).format(filename=filename)
-                        )
+                        pass  # izlenmeyen klasör dosyası: kart gösteriyor, ayrıca ileti yok
                     else:
                         # Single file transfer - show toast immediately
                         try:
@@ -990,8 +981,12 @@ class Application(QObject):
             )
 
             # Update tray icon
-            active_count = len(self.transfer_manager.get_active_transfers())
+            active = self.transfer_manager.get_active_transfers()
+            active_count = len(active)
             self.tray_icon.update_icon_with_badge(active_count)
+            _refresh_taskbar(self, active)
+            if not active:
+                self.window.notify_transfers_finished()  # pencere önde değilse görev çubuğu düğmesi yanıp söner
         except Exception as e:
             self.logger.exception(f"Error in _handle_transfer_complete_gui: {e}")
             # Still show basic status message even if there's an error
@@ -1016,8 +1011,13 @@ class Application(QObject):
         """Handle transfer started"""
         self.logger.info(f"Transfer started: {transfer.filename}")
 
-    def _on_refresh_devices(self):
-        """Handle refresh devices request"""
+    def _on_user_refresh_devices(self):
+        """Kullanıcı "Yenile"ye bastı: sonuç ("✓ N cihaz bulundu") pencerede bildirilir."""
+        self._on_refresh_devices(announce=True)
+
+    def _on_refresh_devices(self, announce: bool = False):
+        """Cihaz listesini keşifle eşitle (liste ve seçim korunur). `announce`: sonucu kullanıcıya bildir
+        (açılıştaki otomatik yenilemede bildirilmez)."""
         self.logger.info("Refreshing devices...")
         if hasattr(self.discovery, 'broadcast_now'):
             self.discovery.broadcast_now()
@@ -1039,10 +1039,11 @@ class Application(QObject):
                 for device in shown:
                     self.window.add_device(device)
 
-                lang = get_active_language(self.config)
-                self.window.show_status_message(
-                    t("devices_found", lang).format(count=len(shown)), 3000
-                )
+                if announce:
+                    lang = get_active_language(self.config)
+                    self.window.show_status_message(
+                        t("devices_found", lang).format(count=len(shown)), 3000
+                    )
             except Exception as e:
                 self.logger.error(f"Error refreshing devices: {e}")
             finally:
@@ -1560,23 +1561,14 @@ class Application(QObject):
                 self._handled_completion_ids.discard(transfer.transfer_id)
                 self.window.add_transfer(transfer)
                 self._find_folder_transfer_info(transfer)
-                lang = get_active_language(self.config)
-                self.window.show_status_message(
-                    t("receiving_file", lang).format(
-                        filename=transfer.filename, device=transfer.device_name
-                    )
-                )
+                _refresh_taskbar(self)  # gelen kart listede belirir: ayrıca ileti yok
         except Exception as e:
             self.logger.exception(f"Error in _handle_file_received_gui: {e}")
 
     # Window event handlers
     def _show_window(self):
-        """Show main window"""
-        # Show window first
-        self.window.showNormal()
-        self.window.show()
-        self.window.activateWindow()
-        self.window.raise_()
+        """Ana pencereyi göster: tepsiden/simge durumundan önceki haline (ekranı kaplıyorsa kaplayarak) döner."""
+        self.window.restore_from_tray()
 
         # Tepsiden dönünce listeyi sıfırlama — boş durum (Cihaz Ekle) anlık görünmesin.
         try:

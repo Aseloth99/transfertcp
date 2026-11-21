@@ -179,6 +179,7 @@ class TransferGroupingTest(unittest.TestCase):
         from src.gui.transfer_item import TransferListWidget
 
         widget = TransferListWidget()
+        widget.REGROUP_DELAY_MS = 0  # sıralama mantığı; biten kartın ~1.5 sn beklemesi test_ui_feedback'te
         self.addCleanup(widget.deleteLater)
         transfers = [Transfer(f"t{i}", f"C:/x/{i}.bin", f"{i}.bin", 1000, "1.2.3.4", "P", TransferDirection.SEND)
                      for i in range(3)]

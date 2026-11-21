@@ -2,18 +2,21 @@
 
 from PyQt6.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem, QLabel, 
                             QHBoxLayout, QVBoxLayout, QPushButton, QProgressBar)
+import time
+
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QTimer
 from PyQt6.QtGui import QFont, QCursor, QPainter, QColor, QPalette
 
 from ..models.transfer import Transfer, TransferStatus, TransferDirection
 from ..utils.error_text import localize_error
-from ..utils.helpers import format_bytes, format_duration, format_speed, format_time
+from ..utils.helpers import format_bytes, format_duration, format_eta, format_speed
 from ..utils.locales import configured_language, t
 from ..utils.transfer_labels import wait_labels
 from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
 from .widgets.glyph_icons import glyph_color, glyph_icon
 from .widgets.tone import set_tone
+from .widgets.smooth_progress import SmoothProgressBar
 
 
 class _BadgeLabel(QLabel):
@@ -50,7 +53,11 @@ class _BadgeLabel(QLabel):
 
 class TransferItemWidget(QWidget):
     """Custom widget for transfer list item"""
-    
+
+    # Hız / kalan süre yazısı saniyede ~2 kez yenilenir ve hafifçe yumuşatılır (100 ms'de bir değişince titriyordu)
+    SPEED_REFRESH_S = 0.5
+    SPEED_SMOOTHING = 0.5  # yeni örneğin ağırlığı (model hızı zaten EMA; bu yalnızca gösterilen değeri sakinleştirir)
+
     pause_clicked = pyqtSignal(str)  # transfer_id
     resume_clicked = pyqtSignal(str)
     cancel_clicked = pyqtSignal(str)
@@ -59,6 +66,9 @@ class TransferItemWidget(QWidget):
         super().__init__(parent)
         self.transfer = transfer
         self.lang = configured_language()
+        self._shown_speed = 0.0
+        self._speed_stamp = None  # son hız yazısının zamanı (monotonic)
+        self._speed_text = ""
         self.setObjectName("TransferItemWidget")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
@@ -133,7 +143,7 @@ class TransferItemWidget(QWidget):
         top_layout.addWidget(self.cancel_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Orta satır: ince ilerleme çubuğu ve yüzde
-        self.progress_bar = QProgressBar()
+        self.progress_bar = SmoothProgressBar()
         self.progress_bar.setObjectName("transferBar")
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
@@ -282,13 +292,7 @@ class TransferItemWidget(QWidget):
 
             # Update speed and ETA
             if transfer.status == TransferStatus.TRANSFERRING and transfer.speed > 0:
-                speed_text = format_speed(transfer.speed)
-                eta = transfer.estimated_time_remaining
-                if eta:
-                    eta_text = format_time(eta, lang)
-                    self.speed_label.setText(f"{speed_text} · {eta_text} {t('eta_left', lang)}")
-                else:
-                    self.speed_label.setText(speed_text)
+                self.speed_label.setText(self._speed_eta_text(lang))
             elif transfer.status == TransferStatus.PAUSED:
                 self.speed_label.setText(t("transfer_status_paused", lang))
             elif wait is not None:
@@ -333,6 +337,26 @@ class TransferItemWidget(QWidget):
             self._set_bar_state("running")
         self._update_badge()
 
+    def _speed_eta_text(self, lang: str, now: float | None = None) -> str:
+        """Hız (3 anlamlı basamak) ve kalan süre ("~2 dk"); en çok SPEED_REFRESH_S'de bir değişir."""
+        now = time.monotonic() if now is None else now
+        if self._speed_stamp is not None and 0 <= now - self._speed_stamp < self.SPEED_REFRESH_S and self._speed_text:
+            return self._speed_text
+        sample = float(self.transfer.speed or 0.0)
+        if self._shown_speed <= 0 or self._speed_stamp is None:
+            self._shown_speed = sample
+        else:
+            alpha = self.SPEED_SMOOTHING
+            self._shown_speed = alpha * sample + (1 - alpha) * self._shown_speed
+        self._speed_stamp = now
+        text = format_speed(self._shown_speed)
+        remaining = max(0, int(self.transfer.filesize or 0) - int(self.transfer.bytes_transferred or 0))
+        if self._shown_speed > 0 and remaining > 0 and self.transfer.bytes_transferred:
+            eta = format_eta(remaining / self._shown_speed, lang)
+            text = f"{text} · {eta} {t('eta_left', lang)}"
+        self._speed_text = text
+        return text
+
     def _get_status_text(self) -> str:
         """Get status text"""
         lang = self.lang
@@ -350,6 +374,7 @@ class TransferItemWidget(QWidget):
     def retranslate(self, lang: str | None = None):
         if lang is not None:
             self.lang = lang
+        self._speed_stamp = None  # hız yazısı yeni dilde hemen yenilensin
         self.pause_btn.setToolTip(t("pause_local_tooltip", self.lang))
         self.cancel_btn.setToolTip(t("cancel_tooltip", self.lang))
         self._update_ui()
@@ -389,6 +414,9 @@ class _TransferRow(QListWidgetItem):
         return self.key < getattr(other, "key", (0, 0))
 
 
+EMPTY_HINT_COLORS = {"dark": ("#ffffff", "#c8c8c8"), "light": ("#1a1a1a", "#616161")}
+
+
 class _EmptyHintList(CardListWidget):
     """Liste bosken ortada kisa bir aciklama cizer; ilk transfer eklenince kendiliginden kaybolur."""
 
@@ -409,7 +437,9 @@ class _EmptyHintList(CardListWidget):
         dark = True if app is None or app.property("tt_dark") is None else bool(app.property("tt_dark"))
         painter = QPainter(self.viewport())
         rect = self.viewport().rect()
-        painter.setPen(QColor("#9a9a9a" if dark else "#6b7280"))
+        # Cihaz panelindeki "Henüz cihaz yok" ile aynı tonlar: başlık ana metin rengi, açıklama ikincil metin
+        title_color, hint_color = EMPTY_HINT_COLORS["dark" if dark else "light"]
+        painter.setPen(QColor(title_color))
         title_font = QFont(self.font())
         title_font.setPointSizeF(self.font().pointSizeF() + 2 if self.font().pointSizeF() > 0 else 12)
         title_font.setBold(True)
@@ -420,6 +450,7 @@ class _EmptyHintList(CardListWidget):
             self._title,
         )
         painter.setFont(self.font())
+        painter.setPen(QColor(hint_color))
         painter.drawText(
             rect.adjusted(48, rect.height() // 2 - 8, -48, 0),
             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop) | int(Qt.TextFlag.TextWordWrap),
@@ -436,11 +467,18 @@ class TransferListWidget(QWidget):
     cancel_transfer = pyqtSignal(str)
     cancel_all_requested = pyqtSignal()
     clear_requested = pyqtSignal()
-    
+
+    # Biten kart bu kadar yerinde kalır (kullanıcı tamamlandığını görsün), sonra bitenlerin arasına iner
+    REGROUP_DELAY_MS = 1500
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.transfers = {}  # key: transfer_id, value: (item, widget)
         self._seq = 0  # ekleme / bitiş sırası (bkz. _regroup)
+        self._finished_at = {}  # transfer_id -> bitişin görüldüğü an (monotonic); henüz aşağı inmemiş kartlar
+        self._regroup_timer = QTimer(self)
+        self._regroup_timer.setSingleShot(True)
+        self._regroup_timer.timeout.connect(self._regroup)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -583,7 +621,8 @@ class TransferListWidget(QWidget):
             
             # Remove from dict
             del self.transfers[transfer_id]
-            
+            self._finished_at.pop(transfer_id, None)
+
             # Update count
             self._update_count()
     
@@ -596,16 +635,34 @@ class TransferListWidget(QWidget):
         self._update_count()
 
     def _regroup(self):
-        """Biten transfer devam edenlerin altına iner; yeniden denenen tekrar üste çıkar (kartlar korunur)."""
+        """Biten transfer devam edenlerin altına iner; yeniden denenen tekrar üste çıkar (kartlar korunur).
+
+        Biten kart hemen yer değiştirmez: REGROUP_DELAY_MS boyunca yerinde "Tamamlandı" olarak görünür."""
         changed = False
-        for item, widget in self.transfers.values():
+        now = time.monotonic()
+        wait_ms = None
+        for transfer_id, (item, widget) in self.transfers.items():
             finished = widget.transfer.status in _FINISHED
-            if finished != (item.key[0] == 1):
-                self._seq += 1
-                item.key = (1 if finished else 0, -self._seq)
-                changed = True
+            if finished == (item.key[0] == 1):
+                if not finished:
+                    self._finished_at.pop(transfer_id, None)
+                continue
+            if finished:
+                seen = self._finished_at.setdefault(transfer_id, now)
+                left_ms = self.REGROUP_DELAY_MS - (now - seen) * 1000.0
+                if left_ms > 0:
+                    wait_ms = left_ms if wait_ms is None else min(wait_ms, left_ms)
+                    continue
+                self._finished_at.pop(transfer_id, None)
+            else:
+                self._finished_at.pop(transfer_id, None)
+            self._seq += 1
+            item.key = (1 if finished else 0, -self._seq)
+            changed = True
         if changed:
             self.list_widget.sortItems(Qt.SortOrder.AscendingOrder)
+        if wait_ms is not None:
+            self._regroup_timer.start(max(1, int(wait_ms) + 1))
 
     def _update_count(self):
         """Update transfer count label and button visibilities"""
