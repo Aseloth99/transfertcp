@@ -47,6 +47,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QTextBrowser,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -136,7 +137,7 @@ _TEXTS = {
         "abort": "Durdur", "yes_to_all": "Tümüne Evet", "no_to_all": "Tümüne Hayır", "save_all": "Tümünü Kaydet",
         "help": "Yardım", "reset": "Sıfırla", "restore_defaults": "Varsayılanları Geri Yükle", "delete": "Sil",
         "details_show": "Ayrıntıları Göster", "details_hide": "Ayrıntıları Gizle",
-        "copy": "Kopyala", "select_all": "Tümünü Seç", "close_tip": "Kapat",
+        "copy": "Kopyala", "select_all": "Tümünü Seç", "close_tip": "Kapat", "copied": "Kopyalandı",
     },
     "en": {
         "ok": "OK", "cancel": "Cancel", "yes": "Yes", "no": "No", "close": "Close", "save": "Save",
@@ -144,7 +145,7 @@ _TEXTS = {
         "abort": "Abort", "yes_to_all": "Yes to All", "no_to_all": "No to All", "save_all": "Save All",
         "help": "Help", "reset": "Reset", "restore_defaults": "Restore Defaults", "delete": "Delete",
         "details_show": "Show Details", "details_hide": "Hide Details",
-        "copy": "Copy", "select_all": "Select All", "close_tip": "Close",
+        "copy": "Copy", "select_all": "Select All", "close_tip": "Close", "copied": "Copied",
     },
 }
 
@@ -187,6 +188,14 @@ def _lang() -> str:
     if not code or code == "auto":
         code = QLocale.system().name().lower()  # tr_TR
     return "tr" if code.startswith("tr") else "en"
+
+
+def flash_copied(widget) -> None:
+    """Panoya kopyalandıktan sonra imlecin yanında kısa "Kopyalandı" ipucu (sessiz kopyalama geri bildirimsizdi)."""
+    try:
+        QToolTip.showText(QCursor.pos(), button_text("copied"), widget, widget.rect(), 1500)
+    except RuntimeError:
+        pass
 
 
 def button_text(button, lang: str | None = None) -> str:
@@ -680,10 +689,14 @@ class _TextBlock(QTextBrowser):
         menu = QMenu(self)
         copy = menu.addAction(button_text("copy"))
         copy.setEnabled(self.textCursor().hasSelection())
-        copy.triggered.connect(self.copy)
+        copy.triggered.connect(self._copy_with_feedback)
         select_all = menu.addAction(button_text("select_all"))
         select_all.triggered.connect(self.selectAll)
         menu.exec(event.globalPos())
+
+    def _copy_with_feedback(self) -> None:
+        self.copy()
+        flash_copied(self)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1110,6 +1123,7 @@ class MessageBox(_ChromeDialog):
         if event.matches(QKeySequence.StandardKey.Copy) and not any(b.textCursor().hasSelection() for b in self._blocks):
             parts = [self._title_text, self._text, self._info, self._detail]
             QApplication.clipboard().setText("\n\n".join(p for p in parts if p))
+            flash_copied(self)
             event.accept()
             return
         super().keyPressEvent(event)

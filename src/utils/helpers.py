@@ -51,21 +51,50 @@ def format_bytes(size: int) -> str:
     return f"{size:.2f} PB"
 
 
+def _three_digits(value: float) -> str:
+    """3 anlamlı basamak: 1.23 · 12.3 · 123 (yuvarlama basamak sayısını büyütmesin diye eşikler yuvarlanmış değere bakar)."""
+    if round(value, 2) < 10:
+        return f"{value:.2f}"
+    if round(value, 1) < 100:
+        return f"{value:.1f}"
+    return f"{value:.0f}"
+
+
 def format_speed(bytes_per_sec: float) -> str:
-    """Format transfer speed in MB/s or KB/s"""
+    """Aktarım hızı, 3 anlamlı basamakla: "512 B/s", "45.6 KB/s", "1.23 MB/s", "118 MB/s"."""
     if bytes_per_sec <= 0:
         return "0 B/s"
-    
-    # Convert to MB/s
-    mb_per_sec = bytes_per_sec / (1024 * 1024)
-    
-    if mb_per_sec >= 1.0:
-        # Show as MB/s with 2 decimal places
-        return f"{mb_per_sec:.2f} MB/s"
-    else:
-        # Show as KB/s
-        kb_per_sec = bytes_per_sec / 1024
-        return f"{kb_per_sec:.2f} KB/s"
+    value = float(bytes_per_sec)
+    if value < 1000:
+        return f"{value:.0f} B/s"
+    for unit in ("KB/s", "MB/s", "GB/s"):
+        value /= 1024.0
+        if round(value) < 1000 or unit == "GB/s":  # 999.7 KB/s "1000 KB/s" değil "0.98 MB/s" yazılsın
+            return f"{_three_digits(value)} {unit}"
+    return f"{_three_digits(value)} GB/s"
+
+
+def format_eta(seconds: float, lang: Optional[str] = None) -> str:
+    """Kalan süre, okunur birimlere yuvarlanmış: "8 sn", "45 sn", "~2 dk", "~1 sa 20 dk".
+
+    Saniye her ilerleme adımında değişip titremesin diye 10 sn üstü 5 sn'ye, 90 sn üstü dakikaya yuvarlanır."""
+    from .locales import configured_language, t
+
+    lang = lang or configured_language()
+    total = max(0.0, float(seconds))
+    if total < 10:
+        return t("eta_seconds", lang).format(n=max(1, int(round(total))))
+    if total < 60:
+        return t("eta_seconds", lang).format(n=min(55, int(round(total / 5.0)) * 5))
+    if total < 90:
+        return t("eta_about_minutes", lang).format(m=1)
+    if total < 3600 - 30:
+        return t("eta_about_minutes", lang).format(m=int(round(total / 60.0)))
+    minutes = int(round(total / 60.0))
+    hours, rest = divmod(minutes, 60)
+    if rest == 0:
+        return t("eta_about_hours", lang).format(h=hours)
+    return t("eta_about_hours_minutes", lang).format(h=hours, m=rest)
 
 
 def format_time(seconds: int, lang: Optional[str] = None) -> str:

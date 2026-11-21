@@ -14,6 +14,7 @@ from datetime import datetime
 
 from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
+from .widgets.hover_fix import settle_hover
 from .widgets.tone import set_tone
 
 
@@ -170,7 +171,8 @@ class DeviceListWidget(QWidget):
     selection_changed = pyqtSignal()  # secili cihaz / cevrimici durumu / liste degisti (birakma alani hedefi icin)
     refresh_requested = pyqtSignal()  # New signal for refresh
     manual_device_requested = pyqtSignal(str, str, int)  # ip, görünen ad, port — yayınsız ağlar için
-    device_remove_requested = pyqtSignal(object)  # Device — listeden kaldırma
+    device_remove_requested = pyqtSignal(object, bool)  # Device, kaldırılırken seçili miydi ("Geri Al" seçimi de geri getirir)
+    ip_copied = pyqtSignal(str)  # IP panoya kopyalandı (pencere "Kopyalandı" bildirimi gösterir)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -356,6 +358,15 @@ class DeviceListWidget(QWidget):
             self._update_count()
             self.selection_changed.emit()
     
+    def select_device(self, device: Device) -> bool:
+        """Cihazın kartını seçili yap (ör. kaldırma geri alınınca)."""
+        entry = self.devices.get(f"{device.ip}:{device.port}")
+        if entry is None:
+            return False
+        self.list_widget.setCurrentItem(entry[0])
+        self._update_all_widget_styles()
+        return True
+
     def get_selected_device(self) -> Device:
         """Get currently selected device"""
         current_item = self.list_widget.currentItem()
@@ -499,17 +510,16 @@ class DeviceListWidget(QWidget):
             get_logger().warning(f"Failed to save favorite status: {e}")
     
     def _copy_ip_to_clipboard(self, ip: str):
-        """Copy IP address to clipboard"""
+        """IP'yi panoya kopyala; pencere "Kopyalandı" bildirimi gösterir."""
         from PyQt6.QtWidgets import QApplication
         clipboard = QApplication.clipboard()
         clipboard.setText(ip)
+        self.ip_copied.emit(ip)
     
     def _on_refresh_clicked(self):
-        """Handle refresh button click"""
+        """Yenile: liste ve seçim yerinde kalır (eskiden önce boşalıyordu: boş liste yanıp sönüyor, seçim kayboluyordu).
+        Artık görünmeyen cihazları uygulama yenileme sonucunda kendisi kaldırır."""
         self.begin_refresh()
-        self.list_widget.clear()
-        self.devices.clear()
-        self._update_count()
         self.refresh_requested.emit()
     
     def _show_context_menu(self, position):
@@ -553,9 +563,16 @@ class DeviceListWidget(QWidget):
 
         # Show menu
         menu.exec(self.list_widget.mapToGlobal(position))
+        # Menü dışarı tıklanarak kapanınca kart üzerine gelinmiş (hover) görünümde kalmasın
+        for entry_item, entry_widget in list(self.devices.values()):
+            if entry_item is item:
+                settle_hover(entry_widget)
+        settle_hover(self.list_widget.viewport())
 
     def _request_remove(self, device: Device):
         """Cihazı arayüzden çıkar, çekirdeğe de bildirilmesini iste."""
+        selected = self.get_selected_device()
+        was_selected = selected is not None and (selected.ip, selected.port) == (device.ip, device.port)
         self.remove_device(device)
-        self.device_remove_requested.emit(device)
+        self.device_remove_requested.emit(device, was_selected)
 

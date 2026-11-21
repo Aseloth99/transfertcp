@@ -15,6 +15,7 @@ from ..utils.helpers import format_bytes
 from .widgets.tone import set_tone
 from .chrome_dialog import ChromeDialog
 from ..utils.locales import configured_language, get_active_language, t
+from .widgets.smooth_progress import SmoothProgressBar
 
 _ZWSP = "\u200b"
 
@@ -118,7 +119,7 @@ class UpdateDialog(ChromeDialog):
         layout.addWidget(self.notes_text, 1)
 
         # Progress bar (initially hidden)
-        self.progress_bar = QProgressBar()
+        self.progress_bar = SmoothProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setMinimumHeight(18)

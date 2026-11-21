@@ -163,22 +163,23 @@ QPushButton:disabled {
 }
 
 /* Primary Button */
+/* Açık temada beyaz yazı koyu vurgu tonunda (accent2) durur: açık ton (#00ACC1 vb.) üstünde kontrast ~2.6:1 kalıyordu */
 QPushButton[class="primary"] {
-    background-color: #2196F3;
+    background-color: #1976D2;
     color: #ffffff;
-    border: 1px solid #1976D2;
+    border: 1px solid #1565C0;
     font-weight: 600;
 }
 
 QPushButton[class="primary"]:hover {
-    background-color: #1976D2;
-    border-color: #2196F3;
+    background-color: #1565C0;
+    border-color: #1976D2;
     color: #ffffff;
 }
 
 QPushButton[class="primary"]:pressed {
-    background-color: #1976D2;
-    border-color: #1565C0;
+    background-color: #1565C0;
+    border-color: #0D47A1;
     color: #ffffff;
 }
 
@@ -1019,15 +1020,15 @@ QWidget#settingsDialog QPushButton#settingsFooterBtn:pressed {
 }
 
 QWidget#settingsDialog QPushButton#settingsFooterBtn[class="primary"] {
-    background-color: #2196F3;
+    background-color: #1976D2;
     color: #ffffff;
-    border: 1px solid #1976D2;
+    border: 1px solid #1565C0;
     font-weight: 600;
 }
 
 QWidget#settingsDialog QPushButton#settingsFooterBtn[class="primary"]:hover {
-    background-color: #1976D2;
-    border-color: #2196F3;
+    background-color: #1565C0;
+    border-color: #1976D2;
 }
 
 /* Manual Device Dialog */
@@ -1276,7 +1277,7 @@ QLabel[tone="body"] { color: #4a4a4a; }
 QLabel[tone="muted"] { color: #616161; }
 QLabel[tone="ok"] { color: #2E7D32; }
 QLabel[tone="err"] { color: #C62828; }
-QLabel[tone="warn"] { color: #C2410C; }
+QLabel[tone="warn"] { color: #8A5300; }
 QLabel[tone="info"] { color: #1976D2; }
 
 /* Birakma alani: hedef cihaz durumu (hazir / cevrimdisi) ve bos cihaz listesi aciklamasi */

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel,
                             QSplitter, QFrame, QMenu, QApplication,
                             QSizeGrip)
-from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QPoint, QRect
 from PyQt6.QtGui import (QAction, QKeySequence, QDragEnterEvent, QDropEvent, QIcon,
                          QMouseEvent, QActionGroup, QCursor, QColor)
 from os.path import exists, basename
@@ -12,6 +12,9 @@ from os.path import exists, basename
 from .device_list import DeviceListWidget
 from .transfer_item import TransferListWidget
 from .widgets.glyph_icons import glyph_color, glyph_icon
+from .widgets.hover_fix import settle_after_menu
+from .widgets.inline_toast import InlineToast
+from .widgets.taskbar_progress import TaskbarProgress
 from .widgets.tone import set_tone
 from .widgets.title_glyphs import TitleGlyphButton, update_ink
 from .chrome_dialog import ChromeDialog
@@ -50,6 +53,30 @@ def _color_swatch_icon(hex_color: str) -> QIcon:
     p.drawRoundedRect(QRectF(1, 1, 14, 14), 4, 4)
     p.end()
     return QIcon(pix)
+
+
+def clamp_to_screens(rect: QRect, screens: list, min_visible: int = 120) -> QRect:
+    """Kayıtlı pencere dikdörtgenini görünür bir ekrana sığdırır (ekran çıkarıldıysa / çözünürlük küçüldüyse).
+
+    `screens`: ekranların kullanılabilir alanları (QRect), ilki birincil ekran. Pencere en çok örtüştüğü ekrana
+    taşınır; o ekranla örtüşmesi `min_visible` pikselden azsa birincil ekranın ortasına konur. Ekrandan büyükse küçülür."""
+    if not screens:
+        return QRect(rect)
+    best, best_area = screens[0], -1
+    for area in screens:
+        inter = area.intersected(rect)
+        size = 0 if inter.isEmpty() else inter.width() * inter.height()
+        if size > best_area:
+            best, best_area = area, size
+    inter = best.intersected(rect)
+    if inter.isEmpty() or inter.width() < min_visible or inter.height() < min_visible:
+        best = screens[0]
+        width, height = min(rect.width(), best.width()), min(rect.height(), best.height())
+        return QRect(best.x() + (best.width() - width) // 2, best.y() + (best.height() - height) // 2, width, height)
+    width, height = min(rect.width(), best.width()), min(rect.height(), best.height())
+    x = min(max(rect.x(), best.x()), best.x() + best.width() - width)
+    y = min(max(rect.y(), best.y()), best.y() + best.height() - height)  # başlık çubuğu ekranın üstünde kalmasın
+    return QRect(x, y, width, height)
 
 
 class DropZone(QFrame):
@@ -372,6 +399,9 @@ class MainWindow(QMainWindow):
     refresh_devices_requested = pyqtSignal()  # New signal
     manual_device_requested = pyqtSignal(str, str, int)  # ip, görünen ad, port — yayınsız ağlar için
     device_remove_requested = pyqtSignal(object)  # Device — listeden kaldırma
+    device_restore_requested = pyqtSignal(object)  # Device — kaldırma "Geri Al" ile geri alındı
+
+    TOAST_UNDO_MS = 6000  # "Geri Al" düğmeli bildirimin süresi
     
     def __init__(self):
         super().__init__()
@@ -413,6 +443,7 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self._retranslate_ui()
         self._load_theme()
+        self._remember_geometry = False  # uygulama açar (enable_geometry_memory); testler/araçlar kayda dokunmaz
         try:  # follow Windows light/dark while the app is open (only matters when the theme is "system")
             QApplication.styleHints().colorSchemeChanged.connect(self._on_system_scheme_changed)
         except (AttributeError, TypeError):
@@ -470,7 +501,8 @@ class MainWindow(QMainWindow):
         self.device_list.device_double_clicked.connect(self._on_device_selected_for_send)
         self.device_list.refresh_requested.connect(self._on_refresh_devices)
         self.device_list.manual_device_requested.connect(self.manual_device_requested.emit)
-        self.device_list.device_remove_requested.connect(self.device_remove_requested.emit)
+        self.device_list.device_remove_requested.connect(self._on_device_removed)
+        self.device_list.ip_copied.connect(self._on_ip_copied)
         
         left_layout.addWidget(self.device_list)
 
@@ -526,6 +558,11 @@ class MainWindow(QMainWindow):
         if app:
             app.installEventFilter(self)
         self._position_size_grip()
+        # Gizli durum çubuğunun yerine: içeriğin alt-ortasında kısa bilgi kapsülü (bkz. show_status_message)
+        self.toast = InlineToast(main_container)
+        # Görev çubuğu düğmesinde toplam aktarım ilerlemesi (Windows; başka yerde sessizce yok)
+        self.taskbar = TaskbarProgress(lambda: int(self.winId()) if self.isVisible() else 0)
+        self._taskbar_batch = {}
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -534,15 +571,85 @@ class MainWindow(QMainWindow):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self._initial_split()
+        taskbar = getattr(self, "taskbar", None)
+        if taskbar is not None:
+            taskbar.forget()  # tepsiden dönünce görev çubuğu düğmesi yeniden yaratılır: ilerleme yeniden gönderilsin
 
     def _initial_split(self) -> None:
-        """İlk gösterimde sol panel pencerenin ~%30'u (270-380 px); sonra bölme 1:2 oranla büyür, kullanıcı sürükleyebilir."""
+        """İlk gösterimde sol panel kayıtlı genişlikte; kayıt yoksa pencerenin ~%30'u (270-380 px).
+        Sonra bölme 1:2 oranla büyür, kullanıcı sürükleyebilir."""
         total = self.splitter.width()
         if self._split_done or total <= 0:
             return
         self._split_done = True
-        left = max(270, min(380, int(total * 0.3)))
+        saved = self._saved_split_left()
+        if saved is not None:
+            left = max(270, min(saved, total - 300))  # sağ panel (bırakma alanı) en az 300 px kalsın
+        else:
+            left = max(270, min(380, int(total * 0.3)))
         self.splitter.setSizes([left, max(0, total - left)])
+
+    # -- pencere konumu / boyutu / bölme hatırlanır ------------------------------------------------------------
+    def _saved_split_left(self):
+        if not getattr(self, "_remember_geometry", False):
+            return None
+        try:
+            value = int(self.config.get('ui', 'splitter_left', 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    def enable_geometry_memory(self) -> None:
+        """Kayıtlı pencere konumunu/boyutunu uygula ve bundan sonra gizlenirken/çıkarken kaydet (Application çağırır)."""
+        self._remember_geometry = True
+        self._restore_geometry()
+
+    def _restore_geometry(self) -> None:
+        """Kayıtlı boyut/konum/ekranı kapla durumu (ekran dışında kaldıysa görünür ekrana sığdırılır)."""
+        saved = self.config.get('ui', 'window_geometry', None)
+        if not isinstance(saved, dict):
+            return
+        try:
+            rect = QRect(int(saved["x"]), int(saved["y"]), int(saved["w"]), int(saved["h"]))
+        except (KeyError, TypeError, ValueError):
+            return
+        rect.setWidth(max(rect.width(), self.minimumWidth()))
+        rect.setHeight(max(rect.height(), self.minimumHeight()))
+        screens = [screen.availableGeometry() for screen in QApplication.screens()]
+        primary = QApplication.primaryScreen()
+        if primary is not None:  # ortalama yedeği birincil ekran olsun
+            first = primary.availableGeometry()
+            screens = [first] + [area for area in screens if area != first]
+        self.setGeometry(clamp_to_screens(rect, screens))
+        if saved.get("maximized"):
+            self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
+    def _save_geometry(self) -> None:
+        """Gizlenirken / çıkarken: normal (ekranı kaplamamış) dikdörtgen + ekranı kapla durumu + sol panel genişliği."""
+        if not getattr(self, "_remember_geometry", False):
+            return
+        maximized = bool(self.windowState() & Qt.WindowState.WindowMaximized)
+        rect = self.normalGeometry() if maximized else self.geometry()
+        if not rect.isValid() or rect.width() <= 0:
+            rect = self.geometry()
+        geometry = {"x": rect.x(), "y": rect.y(), "w": rect.width(), "h": rect.height(), "maximized": maximized}
+        try:
+            if self.config.get('ui', 'window_geometry', None) != geometry:
+                self.config.set('ui', 'window_geometry', geometry)
+            sizes = self.splitter.sizes() if self._split_done else []
+            if len(sizes) == 2 and sizes[0] > 0 and self.config.get('ui', 'splitter_left', None) != sizes[0]:
+                self.config.set('ui', 'splitter_left', int(sizes[0]))
+        except Exception as error:
+            self.logger.warning(f"Pencere konumu kaydedilemedi: {error}")
+
+    def restore_from_tray(self) -> None:
+        """Tepsiden / bildirimden geri getir: ekranı kaplıyorduysa öyle kalır (eskiden showNormal küçültüyordu)."""
+        state = self.windowState()
+        if state & Qt.WindowState.WindowMinimized:
+            self.setWindowState((state & ~Qt.WindowState.WindowMinimized) | Qt.WindowState.WindowActive)
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def _position_size_grip(self) -> None:
         grip = getattr(self, "_size_grip", None)
@@ -663,6 +770,8 @@ class MainWindow(QMainWindow):
 
     def hideEvent(self, event):
         self._clear_resize_cursor()
+        if not event.spontaneous():  # tepsiye gizleme / çıkış (simge durumuna küçültme kendiliğinden olaydır)
+            self._save_geometry()
         super().hideEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent):
@@ -761,6 +870,9 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.exit_action)
 
         self.file_btn.setMenu(file_menu)
+        # Kısayollar pencereye de bağlanır: yalnızca (hiç açılmamış) menüdeki bir eylemin kısayolu çalışmaz
+        self.addAction(self.send_action)
+        self.addAction(self.exit_action)
 
         # Theme menu button (Doğrudan tema seçenekleri)
         self.theme_btn = QPushButton(t('theme', lang))
@@ -862,6 +974,9 @@ class MainWindow(QMainWindow):
         self.title_bar.menu_layout.addWidget(self.lang_btn)
         self.title_bar.menu_layout.addWidget(self.color_btn)
         self.title_bar.menu_layout.addWidget(self.settings_btn)
+        # Menü dışarı tıklanarak kapanınca düğme üzerine gelinmiş (hover) görünümde kalmasın
+        for button in (self.file_btn, self.theme_btn, self.lang_btn, self.color_btn):
+            settle_after_menu(button, button.menu())
         self._refresh_menu_icons()
 
     def _refresh_menu_icons(self):
@@ -1011,6 +1126,8 @@ class MainWindow(QMainWindow):
                         self.drop_zone.refresh_icon()
                     if hasattr(self, "title_bar"):
                         self.title_bar.refresh_update_ink()
+                    if hasattr(self, "toast"):
+                        self.toast.refresh_style()
                     self._update_accent_menu_checks(accent_name)
                     self._update_lang_menu_checks()
                     self._refresh_menu_icons()
@@ -1149,8 +1266,7 @@ class MainWindow(QMainWindow):
         
         # If there are regular files, send them
         if file_list:
-            self.send_files_requested.emit(file_list, selected_device, "")
-            self.statusBar().showMessage(t("sending_files", lang).format(count=len(file_list), device=selected_device.name), 3000)
+            self.send_files_requested.emit(file_list, selected_device, "")  # kart hemen görünür: ayrıca ileti yok
     
     def _on_folder_selected(self, folder_path: str):
         """Handle folder selected"""
@@ -1203,9 +1319,6 @@ class MainWindow(QMainWindow):
             if reply != MessageBox.StandardButton.Yes:
                 return
         
-        # Store folder info for later use in transfer
-        folder_name = basename(folder_path)
-        self.statusBar().showMessage(t("sending_folder", lang).format(folder=folder_name, count=file_count, device=selected_device.name), 3000)
         
         # Send files with folder context
         self.send_files_requested.emit(file_paths, selected_device, folder_path)
@@ -1244,7 +1357,7 @@ class MainWindow(QMainWindow):
         self._load_theme()
         self._refresh_local_info()
         self._sync_tray_menus()
-        self.statusBar().showMessage(t("status_saved", self.lang), 3000)
+        self.show_status_message(t("status_saved", self.lang), 2500)
 
     def preview_appearance(self, theme: str | None = None, language: str | None = None, accent: str | None = None):
         """Ayarlar penceresindeki canlı önizleme: tema/dil/vurgu kaydedilmeden ana pencerede denenir."""
@@ -1358,9 +1471,27 @@ class MainWindow(QMainWindow):
         self.device_list.remove_device(device)
     
     def _on_refresh_devices(self):
-        """Handle refresh devices request"""
+        """Yenile: liste ve seçim korunur; sonuç ("✓ N cihaz bulundu") uygulamadan gelir."""
         self.refresh_devices_requested.emit()
-        self.show_status_message(t("refreshing_devices", self.lang), 2000)
+
+    def _on_device_removed(self, device: Device, was_selected: bool = False):
+        """Cihaz listeden kaldırıldı: çekirdeğe bildir, birkaç saniye "Geri Al" sun."""
+        self.device_remove_requested.emit(device)
+        self.show_status_message(
+            t("device_removed_toast", self.lang).format(name=device.display_name),
+            self.TOAST_UNDO_MS,
+            action_text=t("toast_undo", self.lang),
+            action=lambda: self._undo_device_removal(device, was_selected),
+        )
+
+    def _undo_device_removal(self, device: Device, reselect: bool = False):
+        self.device_restore_requested.emit(device)
+        self.device_list.add_device(device)
+        if reselect:
+            self.device_list.select_device(device)
+
+    def _on_ip_copied(self, ip: str):
+        self.show_status_message(t("ip_copied", self.lang).format(ip=ip), 2000, tone="ok")
     
     def add_transfer(self, transfer: Transfer):
         """Add transfer to list"""
@@ -1382,10 +1513,7 @@ class MainWindow(QMainWindow):
         for transfer_id in to_remove:
             self.transfer_list.remove_transfer(transfer_id)
         
-        if to_remove:
-            self.statusBar().showMessage(t("list_cleared", self.lang).format(n=len(to_remove)), 3000)
-        else:
-            self.statusBar().showMessage(t("list_already_clean", self.lang), 2000)
+        # Liste gözle görülür biçimde boşalır: ayrıca ileti gösterilmez
 
     def clear_all_transfer_history(self):
         """Tepsi menüsünden veya kullanıcı talebiyle transfer listesini ve geçmiş veritabanını temizle"""
@@ -1408,9 +1536,43 @@ class MainWindow(QMainWindow):
         from ..utils.config import get_config
         get_config().set('advanced', 'dismissed_notice', notice_id)
 
-    def show_status_message(self, message: str, timeout: int = 3000):
-        """Show status message in status bar"""
-        self.statusBar().showMessage(message, timeout)
+    def show_status_message(self, message: str, timeout: int = 3000, tone: str | None = None,
+                            action_text: str = "", action=None):
+        """Kısa bilgi: pencere içi kapsülde (durum çubuğu gizli). Baştaki "✓"/"✕" tonu belirler, simge olarak çizilir."""
+        text = str(message or "").strip()
+        if not text:
+            return
+        if tone is None:
+            tone = "ok" if text[0] == "✓" else "err" if text[0] in "✕✗" else "info"
+        if text[0] in "✓✕✗":
+            text = text[1:].strip()
+        self.toast.show_message(text, timeout, tone=tone, action_text=action_text, action=action)
+
+    # -- görev çubuğu ilerlemesi / dikkat çekme ----------------------------------------------------------------
+    def refresh_taskbar_progress(self, active_transfers) -> None:
+        """Görev çubuğu düğmesinde süren aktarımların toplam ilerlemesi. Toplu iş (aynı anda süren aktarımlar) bitene
+        dek bitenler de hesapta kalır; yoksa her biten dosyada çubuk geri giderdi."""
+        active = [tr for tr in (active_transfers or []) if getattr(tr, "is_active", False)]
+        if not active:
+            self._taskbar_batch.clear()
+            self.taskbar.clear()
+            return
+        for tr in active:
+            self._taskbar_batch[tr.transfer_id] = tr
+        total = done = 0
+        for tr in self._taskbar_batch.values():
+            if tr.is_failed or tr.status.value == "cancelled":
+                continue
+            size = max(0, int(tr.filesize or 0))
+            total += size
+            done += size if tr.is_complete else min(size, int(tr.bytes_transferred or 0))
+        paused = all(tr.status.value == "paused" for tr in active)
+        self.taskbar.update(done / total if total else 0.0, paused=paused)
+
+    def notify_transfers_finished(self) -> None:
+        """Aktarımlar bitti ve pencere önde değil: görev çubuğu düğmesi yanıp söner (pencereye geçilince durur)."""
+        if self.isVisible() and not self.isActiveWindow():
+            QApplication.alert(self, 0)
     
     def quit_application(self):
         """Really quit the application"""
@@ -1418,6 +1580,8 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.removeEventFilter(self)
         self._clear_resize_cursor()
+        if self.isVisible():
+            self._save_geometry()
         QApplication.quit()
     
     def changeEvent(self, event: QEvent):
@@ -1438,6 +1602,7 @@ class MainWindow(QMainWindow):
         gui_app = QGuiApplication.instance()
         if gui_app is not None and gui_app.isSavingSession():  # Windows kapanıyor/oturum bitiyor: kapanmayı engelleme
             self._clear_resize_cursor()
+            self._save_geometry()
             event.accept()
             return
         self._clear_resize_cursor()

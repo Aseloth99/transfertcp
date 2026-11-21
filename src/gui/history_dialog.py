@@ -29,7 +29,7 @@ COL_ICON, COL_FILE, COL_DEVICE, COL_SIZE, COL_DATE = range(5)
 # QLabel[tone=...] ile aynı renkler (dark.qss / light.qss)
 _TONES = {
     True: {"ok": "#4CAF50", "err": "#FF6B6B", "warn": "#FF9800", "muted": "#9e9e9e"},
-    False: {"ok": "#2E7D32", "err": "#C62828", "warn": "#C2410C", "muted": "#616161"},
+    False: {"ok": "#2E7D32", "err": "#C62828", "warn": "#8A5300", "muted": "#616161"},
 }
 _STATUS_TONE = {"completed": "ok", "failed": "err", "cancelled": "muted"}
 

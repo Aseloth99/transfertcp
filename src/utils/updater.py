@@ -79,10 +79,15 @@ class UpdateChecker(QObject):
     notice_received = pyqtSignal(object)  # remote_notice.Notice (duyuru satırı)
 
     # Update check configuration - Edit these values directly in this file
-    CURRENT_VERSION = "1.0.3"  # Update this version number when releasing
+    CURRENT_VERSION = "1.0.4"  # Update this version number when releasing
     UPDATE_CHECK_URL = "https://macik.com.tr/api/updates/check"  
     APP_NAME = "TransferTCP"
-    CHECK_INTERVAL_HOURS = 24  # Check once per day
+    # Açılışta: son denetim bundan eskiyse hemen denetlenir (uzun süre açılmayanlar yeni sürümü hemen görür).
+    STARTUP_STALE_HOURS = 1
+    # Açıkken: en geç bu kadar saatte bir denetlenir.
+    CHECK_INTERVAL_HOURS = 4
+    # Sık tık duvar saatine bakar: uyku / hazırda bekleme sonrası kaçan denetim de yakalanır.
+    TICK_MINUTES = 30
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,7 +96,7 @@ class UpdateChecker(QObject):
         self.current_version = self.CURRENT_VERSION
         self.last_check_time: Optional[datetime] = None
         self.check_timer = QTimer(self)
-        self.check_timer.timeout.connect(self.check_for_updates)
+        self.check_timer.timeout.connect(self._auto_check)
         self._auto_thread: Optional[_AutoCheckThread] = None
         self._manual_thread: Optional[_ManualCheckThread] = None
         
@@ -102,10 +107,10 @@ class UpdateChecker(QObject):
             return
         
         # Check immediately on start (if not checked recently)
-        self._check_if_needed()
+        self._check_if_needed(self.STARTUP_STALE_HOURS)
         
-        # Set up periodic checks (every 24 hours)
-        self.check_timer.start(self.CHECK_INTERVAL_HOURS * 3600 * 1000)  # Convert to milliseconds
+        # Periodic wall-clock tick (see TICK_MINUTES)
+        self.check_timer.start(self.TICK_MINUTES * 60 * 1000)
         self.logger.info("Update checker started")
     
     def stop(self):
@@ -117,22 +122,25 @@ class UpdateChecker(QObject):
             self._manual_thread.wait(12000)
         self.logger.info("Update checker stopped")
     
-    def _check_if_needed(self):
+    def _auto_check(self):
+        self._check_if_needed(self.CHECK_INTERVAL_HOURS)
+
+    def _check_if_needed(self, max_age_hours: float | None = None):
         """Check if update check is needed based on last check time"""
         last_check_str = self.config.get('advanced', 'last_update_check', None)
         
         if last_check_str:
             try:
                 self.last_check_time = datetime.fromisoformat(last_check_str)
-                # Check if 24 hours have passed
-                if datetime.now() - self.last_check_time < timedelta(hours=self.CHECK_INTERVAL_HOURS):
+                # Skip if checked within max_age_hours
+                if datetime.now() - self.last_check_time < timedelta(hours=self.CHECK_INTERVAL_HOURS if max_age_hours is None else max_age_hours):
                     self.logger.debug("Update check skipped - checked recently")
                     return
             except Exception as e:
                 self.logger.warning(f"Failed to parse last check time: {e}")
         
         # Perform check
-        self.check_for_updates()
+        self.check_for_updates(show_message=False)
     
     def check_for_updates(self, show_message: bool = False):
         """Güncellemeyi kontrol et; ağ işlemi UI iş parçacığını bloklamaz."""

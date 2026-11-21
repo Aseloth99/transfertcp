@@ -586,6 +586,14 @@ class NetworkDiscovery:
             self.devices.pop(device_key, None)
         self.logger.info(f"Device forgotten: {device_key}")
 
+    def restore_device(self, device: Device) -> None:
+        """`forget_device`i geri al ("Geri Al"): engel kalkar, cihaz yeniden bilinir (yayınla güncellenmeye devam eder)."""
+        device_key = f"{device.ip}:{device.port}"
+        with self.devices_lock:
+            self._blocked.discard(device_key)
+            self.devices.setdefault(device_key, device)
+        self.logger.info(f"Device restored: {device_key}")
+
     def add_manual_device(self, ip: str, port: int, name: str) -> Device:
         """Manually add a device (thread-safe)"""
         device_key = f"{ip}:{port}"
