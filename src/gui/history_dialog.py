@@ -18,8 +18,8 @@ from ..utils.locales import t, get_active_language
 from .chrome_dialog import ChromeDialog
 from .palette import is_dark
 from .trust_dialog import ask_confirm
-from .icons import trash_icon
-from .widgets.glyph_icons import glyph_icon
+from .icons import menu_icon, trash_icon
+from .widgets.glyph_icons import glyph_color, glyph_icon
 
 _LIMIT = 100
 _SORT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -159,7 +159,7 @@ class HistoryDialog(ChromeDialog):
         footer = QHBoxLayout()
         footer.setSpacing(8)
         self.clear_btn = QPushButton()
-        self.clear_btn.setIcon(trash_icon("#ef4444"))
+        self.clear_btn.setIcon(trash_icon(glyph_color(is_dark(), "muted")))  # nötr; kırmızı onay kutusunda
         self.clear_btn.setIconSize(QSize(18, 18))
         self.clear_btn.setObjectName("settingsFooterBtn")
         self.clear_btn.setFixedSize(34, 34)
@@ -283,9 +283,10 @@ class HistoryDialog(ChromeDialog):
     def context_actions(self, row: int) -> list[QAction]:
         """Sağ tık menüsü: dosya yerinde değilse eylemler devre dışı (nedeni ipucunda)."""
         exists = bool(self._existing_path(row))
-        open_act = QAction(t("open_file", self.lang), self)
+        # Renkli anlam simgeleri (Lumina sağ tık menüsüyle aynı): aç mor dışarı-aç, klasörde göster amber klasör
+        open_act = QAction(menu_icon("open_with"), t("open_file", self.lang), self)
         open_act.triggered.connect(lambda: self._open_row(row))
-        reveal_act = QAction(t("show_in_folder", self.lang), self)
+        reveal_act = QAction(menu_icon("folder"), t("show_in_folder", self.lang), self)
         reveal_act.triggered.connect(lambda: self._reveal_row(row))
         for act in (open_act, reveal_act):
             act.setEnabled(exists)

@@ -84,6 +84,57 @@ def tcp_palette() -> dict:
     return base
 
 
+def _rgb(color: str) -> tuple[int, int, int]:
+    h = color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _mix(a: str, b: str, amount: float) -> str:
+    """`a`'dan `b`'ye `amount` oranında opak karışım (#rrggbb)."""
+    (ra, ga, ba), (rb, gb, bb) = _rgb(a), _rgb(b)
+    return "#" + "".join(f"{max(0, min(255, round(x + (y - x) * amount))):02x}"
+                         for x, y in ((ra, rb), (ga, gb), (ba, bb)))
+
+
+def _luminance(color: str) -> float:
+    def lin(v: int) -> float:
+        s = v / 255.0
+        return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (lin(v) for v in _rgb(color))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _luminance(a), _luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def readable(color: str, background: str, target: float = 4.5) -> str:
+    """`color`'ı, `background` üzerinde `target` kontrastına ulaşana dek (koyu zeminde beyaza, açıkta siyaha) çeker."""
+    if _contrast(color, background) >= target:
+        return color
+    toward = "#ffffff" if _luminance(background) < 0.4 else "#000000"
+    for step in range(1, 21):
+        candidate = _mix(color, toward, step / 20.0)
+        if _contrast(candidate, background) >= target:
+            return candidate
+    return toward
+
+
+# Ayarlar kenar çubuğunun zemini (dark.qss / light.qss `QFrame#sidebar`): Lumina'daki `surface` ile aynı
+SIDEBAR_BG = {"dark": "#252525", "light": "#ececec"}
+
+
+def nav_colors(theme: str, key: str | None = None) -> tuple[str, str]:
+    """Ayarlar kenar çubuğunda seçili sekme (Lumina ile aynı kural): zemine %16 (koyu) / %13 (açık) vurgu karışmış
+    hafif zemin ve onun üstünde en az 4,5:1 okunan vurgu yazısı. (`__NAV_TINT__`, `__NAV_INK__`)"""
+    dark = theme == "dark"
+    spec = accent_spec(key)
+    tint = _mix(SIDEBAR_BG["dark" if dark else "light"], spec["accent"], 0.16 if dark else 0.13)
+    return tint, readable(spec["hi_dark"] if dark else spec["accent2"], tint, 4.5)
+
+
 def install_message_box() -> None:
     """Özel kutuyu TCP paletine/simgesine/diline bağlar (idempotent; ana pencereden ÖNCE çağrılır)."""
     from . import message_box

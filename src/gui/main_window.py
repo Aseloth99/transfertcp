@@ -20,7 +20,7 @@ from .widgets.title_glyphs import TitleGlyphButton, update_ink
 from .chrome_dialog import ChromeDialog
 from .message_box import MessageBox
 from .palette import (ACCENTS, DEFAULT_ACCENT, accent_color, accent_key, accent_label, accent_spec, is_dark,
-                      set_accent_override)
+                      nav_colors, set_accent_override)
 from .settings import SettingsDialog
 from ..models.device import Device
 from ..models.transfer import Transfer
@@ -35,8 +35,8 @@ from .icons import (
     globe_icon,
     folder_icon,
     settings_gear_icon,
-    door_exit_icon,
-    info_icon,
+    checkmark_png,
+    menu_icon,
 )
 
 
@@ -535,6 +535,8 @@ class MainWindow(QMainWindow):
         self.transfer_list.resume_transfer.connect(self.resume_transfer_requested.emit)
         self.transfer_list.cancel_transfer.connect(self.cancel_transfer_requested.emit)
         self.transfer_list.clear_requested.connect(self._clear_transfer_list)
+        self.transfer_list.retry_transfer.connect(self._retry_transfer)
+        self.transfer_list.retry_target = self._retry_target
         
         right_layout.addWidget(self.drop_zone, stretch=0)
         right_layout.addWidget(self.transfer_list, stretch=1)
@@ -980,15 +982,17 @@ class MainWindow(QMainWindow):
         self._refresh_menu_icons()
 
     def _refresh_menu_icons(self):
-        """Vurguya bağlı menü simgeleri (Dosya, Gönder, Çıkış, Ayarlar, Dil, Hakkında) seçili vurguyla yeniden boyanır."""
+        """Başlık düğmeleri (Dosya, Ayarlar, Dil) tek renk: seçili vurguyla yeniden boyanır. Menü satırları renkli anlam
+        simgeleri taşır (Lumina ⋯ menüsüyle aynı): gönder camgöbeği-yeşil uçak, çıkış kırmızı kapı, ayarlar mor dişli,
+        hakkında mavi (vurgu) bilgi rozeti."""
         color = accent_color()
         self.file_btn.setIcon(folder_icon(color))
-        self.send_action.setIcon(glyph_icon("upload", color, 16))
-        self.exit_action.setIcon(door_exit_icon("#ef4444"))
         self.settings_btn.setIcon(settings_gear_icon(color))
-        self.settings_action.setIcon(settings_gear_icon(color))
         self.lang_btn.setIcon(globe_icon(color))
-        self.about_action.setIcon(info_icon(color))
+        self.send_action.setIcon(menu_icon("send"))
+        self.exit_action.setIcon(menu_icon("exit"))
+        self.settings_action.setIcon(menu_icon("settings"))
+        self.about_action.setIcon(menu_icon("info"))
 
     def _setup_statusbar(self):
         """Gönderilen/alınan toplamlar transfer başlığına taşındı; alt çubuk gizlenir."""
@@ -1096,7 +1100,11 @@ class MainWindow(QMainWindow):
                     stylesheet = f.read()
                     icon_dir = get_asset_path("icons").replace('\\', '/')
                     stylesheet = stylesheet.replace("__ASSET_ICONS__", icon_dir)
-                    
+                    # onay kutusu tiki: seçiliyken beyaz, pasif+seçiliyken soluk gri (FlexiKey/MediaCompressor ile aynı)
+                    stylesheet = stylesheet.replace(
+                        "__CHECK_TICK_MUTED__", checkmark_png("#9e9e9e" if actual_theme == "dark" else "#616161"))
+                    stylesheet = stylesheet.replace("__CHECK_TICK__", checkmark_png("#ffffff"))
+
                     # Dynamic accent color replacement
                     if accent_name != "blue":
                         stylesheet = stylesheet.replace("#2196F3", acc_spec["accent"])
@@ -1115,7 +1123,11 @@ class MainWindow(QMainWindow):
                         stylesheet = stylesheet.replace("rgba(33, 150, 243,", f"rgba({tint.red()}, {tint.green()}, {tint.blue()},")
                         tint_hi = QColor(hi_color)
                         stylesheet = stylesheet.replace("rgba(66, 165, 245,", f"rgba({tint_hi.red()}, {tint_hi.green()}, {tint_hi.blue()},")
-                        
+
+                    # Ayarlar kenar çubuğunda seçili sekme: vurguya göre hesaplanan zemin + okunur yazı (Lumina ile aynı)
+                    nav_tint, nav_ink = nav_colors(actual_theme, accent_name)
+                    stylesheet = stylesheet.replace("__NAV_TINT__", nav_tint).replace("__NAV_INK__", nav_ink)
+
                     self.setStyleSheet(stylesheet)
                     app = QApplication.instance()
                     if app:
@@ -1501,6 +1513,29 @@ class MainWindow(QMainWindow):
         """Update transfer in UI list immediately"""
         self.transfer_list.update_transfer(transfer)
     
+    def _retry_target(self, transfer: Transfer):
+        """Yeniden gönderimin cihazı: transferin gittiği cihaz listede ve çevrimiçiyse o Device, değilse None."""
+        entry = self.device_list.devices.get(f"{transfer.device_ip}:{transfer.device_port}")
+        device = entry[1].device if entry else None
+        return device if device is not None and device.is_online else None
+
+    def _retry_transfer(self, transfer_id: str):
+        """Sağ tık "Tekrar Dene": başarısız / iptal edilen gönderim, dosya seçilip gönderilmiş gibi aynı cihaza yeniden
+        gider (`send_files_requested`); eski kartın yerini yeni kart alır."""
+        entry = self.transfer_list.transfers.get(transfer_id)
+        if entry is None:
+            return
+        transfer = entry[1].transfer
+        if not transfer.is_failed:
+            return
+        reason = self.transfer_list.retry_block(transfer)
+        if reason:  # menü açıkken cihaz düşmüş ya da dosya silinmiş olabilir
+            MessageBox.warning(self, t("retry", self.lang), reason)
+            return
+        device = self._retry_target(transfer)
+        self.transfer_list.remove_transfer(transfer_id)
+        self.send_files_requested.emit([transfer.filepath], device, "")
+
     def _clear_transfer_list(self):
         """Clear all completed and failed transfers from list"""
         # Get all completed/failed transfers

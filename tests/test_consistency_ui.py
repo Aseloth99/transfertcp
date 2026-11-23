@@ -30,6 +30,52 @@ def _no_box(box):
     raise AssertionError(f"kutu acilmamaliydi: {box.windowTitle()!r}")
 
 
+def _rgb(color: str) -> tuple:
+    h = color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lumina_mix(a: str, b: str, amount: float) -> str:
+    (ra, ga, ba), (rb, gb, bb) = _rgb(a), _rgb(b)
+    return "#" + "".join(f"{max(0, min(255, round(x + (y - x) * amount))):02x}" for x, y in ((ra, rb), (ga, gb), (ba, bb)))
+
+
+def _lumina_contrast(a: str, b: str) -> float:
+    def lum(color):
+        def lin(v):
+            s = v / 255.0
+            return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+
+        r, g, b = (lin(v) for v in _rgb(color))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    la, lb = lum(a), lum(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def _close(a: str, b: str, tolerance: int = 1) -> bool:
+    return all(abs(x - y) <= tolerance for x, y in zip(_rgb(a), _rgb(b)))
+
+
+def _same_icon(a, b, size: int = 32) -> bool:
+    return a.pixmap(size, size).toImage() == b.pixmap(size, size).toImage()
+
+
+def _top_colors(icon, size: int = 32, count: int = 3) -> list:
+    from collections import Counter
+
+    img = icon.pixmap(size, size).toImage()
+    seen = Counter(img.pixelColor(x, y).name() for x in range(size) for y in range(size)
+                   if img.pixelColor(x, y).alpha() == 255)
+    return [name for name, _ in seen.most_common(count)]
+
+
+def _rule(qss: str, selector: str) -> str:
+    match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", qss)
+    assert match, selector
+    return " ".join(match.group(1).split())
+
+
 class _QtCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -194,6 +240,11 @@ class ShortcutsTest(_QtCase):
             self.assertFalse(re.search(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", action.text()), "menude emoji kalmamali")
         self.assertFalse(window.send_action.icon().isNull())
         self.assertFalse(window.exit_action.icon().isNull())
+        from src.gui.icons import menu_icon
+
+        for action, name in ((window.send_action, "send"), (window.exit_action, "exit"),
+                             (window.settings_action, "settings"), (window.about_action, "info")):
+            self.assertTrue(_same_icon(action.icon(), menu_icon(name)), name)
 
 
 class TrayMenuSkeletonTest(_QtCase):
@@ -256,10 +307,23 @@ class TrayMenuSkeletonTest(_QtCase):
         tray = TrayIcon(lang="tr")
         self.addCleanup(tray.tray.deleteLater)
         tray.refresh_icons()
-        image = tray.settings_action.icon().pixmap(20, 20).toImage()
-        painted = {image.pixelColor(x, y).name() for x in range(20) for y in range(20) if image.pixelColor(x, y).alpha() > 200}
+        # dil küresi mavi/gök aileden: vurguyu izler; ayarlar dişlisi anlam rengi (mor) taşır
+        image = tray.lang_menu.icon().pixmap(32, 32).toImage()
+        painted = {image.pixelColor(x, y).name() for x in range(32) for y in range(32) if image.pixelColor(x, y).alpha() > 200}
         self.assertIn(palette.ACCENTS["rose"]["accent"].lower(), painted)
         self.assertNotIn("#38bdf8", painted)
+        self.assertEqual(_top_colors(tray.settings_action.icon(), count=1), ["#8b5cf6"])
+
+    def test_rows_use_the_colored_semantic_icons(self) -> None:
+        from src.gui.icons import menu_icon
+
+        tray = self._tray()
+        tray.refresh_icons()
+        for item, name in ((tray.update_action, "update"), (tray.show_action, "view"), (tray.settings_action, "settings"),
+                           (tray.lang_menu, "globe"), (tray.quit_action, "exit")):
+            self.assertTrue(_same_icon(item.icon(), menu_icon(name)), name)
+        tray.set_language_choice("tr", "tr")
+        self.assertTrue(_same_icon(tray.lang_menu.icon(), menu_icon("globe")))
 
 
 class SettingsPreviewTest(_QtCase):
@@ -323,7 +387,7 @@ class SettingsPreviewTest(_QtCase):
     def test_dialog_is_custom_framed_and_tab_title_keeps_the_ampersand(self) -> None:
         window, dialog, _ = self._open()
         self.assertTrue(dialog.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        self.assertEqual(dialog.tab_widget.tabText(2).replace("&&", "&"), "Ağ ve Gelişmiş")
+        self.assertEqual(dialog.nav_buttons[2].text().replace("&&", "&"), "Ağ ve Gelişmiş")
         self.assertEqual(len(dialog._accent_btns), 10)
         self.assertTrue(dialog._accent_btns["cyan"].isChecked())
 
@@ -431,6 +495,57 @@ class DialogsAreCustomFramedTest(_QtCase):
         self.assertEqual(message_box.current_palette()["base"], "#1a1a1a")
 
 
+class CheckboxAndDestructiveTest(_QtCase):
+    """Onay kutusu FlexiKey/MediaCompressor/Lumina ile aynı (18 px kutu, 5 px köşe, 1 px kenar, vurgu dolgu + 4x
+    çizilmiş beyaz tik, pasif+seçili gri); yıkıcı düğmeler duruşta kardeşleri gibi nötr (22 Kasım 2026)."""
+
+    @staticmethod
+    def _rule(qss: str, selector: str) -> str:
+        match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", qss)
+        assert match, selector
+        return " ".join(match.group(1).split())
+
+    def test_checkbox_follows_the_shared_spec_and_the_chosen_accent(self) -> None:
+        from src.gui import palette
+
+        self.addCleanup(palette.set_accent_override, None)
+        window = self._window()
+        for theme, accent, fill, border, muted in (("dark", "violet", "#262626", "#454545", "9e9e9e"),
+                                                   ("light", "rose", "#ececec", "#b0b0b0", "616161")):
+            window.apply_theme(theme, accent=accent)
+            qss = self.app.styleSheet()
+            self.assertNotIn("__CHECK_TICK", qss)
+            base = self._rule(qss, "QCheckBox::indicator")
+            for decl in ("width: 18px;", "height: 18px;", "border-radius: 5px;", f"background-color: {fill};",
+                         f"border: 1px solid {border};"):
+                self.assertIn(decl, base, theme)
+            spec = palette.ACCENTS[accent]
+            self.assertIn(f"border-color: {spec['accent']};", self._rule(qss, "QCheckBox::indicator:unchecked:hover"))
+            checked = self._rule(qss, "QCheckBox::indicator:checked")
+            self.assertIn(f"background-color: {spec['accent2']};", checked)
+            self.assertRegex(checked, r'image: url\("[^"]*transfertcp_check_ffffff_x4\.png"\)')
+            disabled = self._rule(qss, "QCheckBox::indicator:checked:disabled")
+            self.assertIn(f"background-color: {border};", disabled)
+            self.assertIn(f"transfertcp_check_{muted}_x4.png", disabled)
+
+    def test_tick_is_drawn_at_four_times_the_box(self) -> None:
+        from PyQt6.QtGui import QImage
+
+        from src.gui.icons import checkmark_png
+
+        img = QImage(checkmark_png("#ffffff"))
+        self.assertEqual((img.width(), img.height()), (64, 64))
+        self.assertEqual(img.pixelColor(24, 44).name(), "#ffffff")  # (6, 11) köşesi x4
+        self.assertEqual(img.pixelColor(2, 2).alpha(), 0)
+
+    def test_cancel_all_is_neutral_at_rest_like_clear_list(self) -> None:
+        for name in ("dark", "light"):
+            with open(os.path.join(ROOT, "assets", "styles", f"{name}.qss"), encoding="utf-8") as fh:
+                qss = fh.read()
+            self.assertEqual(self._rule(qss, "QPushButton#cancelAllBtn"), self._rule(qss, "QPushButton#clearListBtn"),
+                             name)
+
+
 class NotificationPathTest(_QtCase):
     def test_toast_goes_through_the_shared_notifier_and_the_tray_balloon(self) -> None:
         from src.gui.toast import SystemToast
@@ -464,6 +579,387 @@ class NotificationPathTest(_QtCase):
             self.assertNotIn("winotify", handle.read().lower())
         with open(os.path.join(ROOT, "TransferTCP.spec"), encoding="utf-8") as handle:
             self.assertNotIn("winotify", handle.read().lower())
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Ayarlar iskeleti (Lumina ile aynı): üst sekmeler yerine solda renkli simgeli sekmeler; seçili sekme vurgu tonlu zemin
+# + okunur vurgu yazı + solda 3 px vurgu çizgisi. Menü satırlarında renkli anlam simgeleri (aynı anlam aynı renk).
+# ---------------------------------------------------------------------------------------------------------------
+class SettingsNavTest(_QtCase):
+    def _dialog(self):
+        from src.gui import palette
+        from src.gui.settings import SettingsDialog
+        from src.utils.config import get_config
+
+        self.addCleanup(palette.set_accent_override, None)
+        window = self._window()
+        config = get_config()
+        config.set("ui", "theme", "dark")
+        config.set("ui", "language", "tr")
+        config.set("ui", "accent", "cyan")
+        window.restore_appearance()
+        dialog = SettingsDialog(window)
+        self.addCleanup(dialog.deleteLater)
+        return window, dialog
+
+    def test_sidebar_has_checkable_nav_buttons_with_colored_icons(self) -> None:
+        from PyQt6.QtWidgets import QTabWidget
+
+        from src.gui.icons import menu_icon
+
+        _window, dialog = self._dialog()
+        self.assertEqual(dialog.sidebar.objectName(), "sidebar")
+        self.assertEqual(dialog.settings_pane.objectName(), "settingsPane")
+        self.assertEqual([b.text().replace("&&", "&") for b in dialog.nav_buttons],
+                         ["Genel", "Transfer", "Ağ ve Gelişmiş"])
+        self.assertEqual(dialog.stack.count(), 3)
+        self.assertEqual(dialog.findChildren(QTabWidget), [], "üst sekme çubuğu kalmadı")
+        for btn, name in zip(dialog.nav_buttons, ("settings", "send", "network")):
+            self.assertEqual(btn.objectName(), "nav_btn")
+            self.assertTrue(btn.isCheckable() and btn.autoExclusive())
+            btn.ensurePolished()   # stil sayfası uygulandıktan sonra da 38 px (QSS min/max-height sabit boyu ezmesin)
+            self.assertEqual((btn.minimumHeight(), btn.maximumHeight()), (38, 38))
+            self.assertTrue(_same_icon(btn.icon(), menu_icon(name)), name)
+        self.assertEqual([b.isChecked() for b in dialog.nav_buttons], [True, False, False])
+        dialog.nav_buttons[2].click()
+        self.assertEqual(dialog.stack.currentIndex(), 2)
+        self.assertEqual([b.isChecked() for b in dialog.nav_buttons], [False, False, True])
+        self.assertTrue(dialog.stack.widget(0).isAncestorOf(dialog.theme_combo))
+        self.assertGreaterEqual(dialog.sidebar.width(), 150)
+        dialog.prepare_content()
+        self.assertGreaterEqual(dialog.width(), dialog.sidebar.width() + dialog._MIN_W)
+
+    def test_nav_rules_match_lumina(self) -> None:
+        from src.gui import palette
+
+        self.addCleanup(palette.set_accent_override, None)
+        window = self._window()
+        for theme, accent in (("dark", "violet"), ("light", "rose"), ("dark", "blue"), ("light", "yellow")):
+            window.apply_theme(theme, accent)
+            qss = window.styleSheet()
+            self.assertNotIn("__NAV_", qss)
+            spec = palette.ACCENTS[accent]
+            side = re.search(r"background-color: (#[0-9a-fA-F]{6});", _rule(qss, "QFrame#sidebar")).group(1)
+            nav = _rule(qss, "QPushButton#nav_btn")
+            for decl in ("padding: 0px 10px 0px 7px;", "border: none;", "border-left: 3px solid transparent;",
+                         "border-radius: 6px;", "min-height: 38px;", "max-height: 38px;"):
+                self.assertIn(decl, nav)
+            # sayfa yığını şeffaf: panelin içinde genel QWidget zemininden gri bir kutu kalmaz
+            self.assertIn("background-color: transparent;", _rule(qss, "QStackedWidget#settingsStack"))
+            checked = _rule(qss, "QPushButton#nav_btn:checked")
+            tint = re.search(r"background-color: (#[0-9a-fA-F]{6});", checked).group(1)
+            ink = re.search(r"(?<!-)color: (#[0-9a-fA-F]{6});", checked).group(1)
+            dark = theme == "dark"
+            self.assertTrue(_close(tint, _lumina_mix(side, spec["accent"], 0.16 if dark else 0.13)), (tint, accent))
+            self.assertGreaterEqual(_lumina_contrast(ink, tint), 4.5, (ink, tint))
+            wanted = spec["hi_dark"] if dark else spec["accent2"]
+            if _lumina_contrast(wanted, tint) >= 4.5:
+                self.assertEqual(ink.lower(), wanted.lower())
+            self.assertIn(f"border-left: 3px solid {spec['accent']};", checked)
+            self.assertIn("font-weight: 700;", checked)
+            self.assertLess(qss.index("QPushButton#nav_btn:hover"), qss.index("QPushButton#nav_btn:checked"))
+
+
+class MenuIconTableTest(_QtCase):
+    """Renk anlamla gelir (Lumina `MENU_PALETTE`): ayarlar mor, güncelle zümrüt, çıkış/sil kırmızı, göz/kılavuz çivit,
+    klasör amber; mavi/gök aile (bilgi, küre, kopya, belge) seçili vurguyu izler."""
+
+    FIXED = {"settings": "#8b5cf6", "update": "#10b981", "exit": "#ef4444", "view": "#7c7ff5", "guide": "#7c7ff5",
+             "trash": "#ef4444", "folder": "#fcd34d", "backup": "#d97706", "add": "#22c55e", "trim": "#22c55e",
+             "adjust": "#f97316", "send": "#14b8a6", "network": "#06b6d4", "open_with": "#a855f7",
+             "rename": "#f59e0b", "star": "#eab308", "bolt": "#eab308", "pause": "#f59e0b", "play": "#22c55e"}
+
+    def test_same_meaning_same_color(self) -> None:
+        from src.gui.icons import MENU_ICON_NAMES, menu_icon
+
+        self.assertLessEqual(set(self.FIXED), set(MENU_ICON_NAMES))
+        for name, color in self.FIXED.items():
+            self.assertIn(color, _top_colors(menu_icon(name)), name)
+
+    def test_blue_family_follows_the_accent(self) -> None:
+        from src.gui import palette
+        from src.gui.icons import menu_icon
+
+        self.addCleanup(palette.set_accent_override, None)
+        for key in ("rose", "green"):
+            palette.set_accent_override(key)
+            self.assertEqual(_top_colors(menu_icon("info"), count=1), [palette.ACCENTS[key]["accent"].lower()], key)
+            self.assertEqual(_top_colors(menu_icon("settings"), count=1), ["#8b5cf6"], "mor dişli vurguyu izlemez")
+
+    def test_device_context_menu_rows_have_colored_icons(self) -> None:
+        from PyQt6.QtWidgets import QMenu
+
+        from src.gui.icons import menu_icon
+
+        window = self._window()
+        window.resize(1000, 680)
+        window.show()
+        self.addCleanup(window.hide)
+        window.device_list.add_device(_device())
+        self.app.processEvents()
+        item, _card = window.device_list.devices["192.168.18.99:38520"]
+        seen = []
+
+        def fake_exec(menu, *args, **kwargs):
+            seen.append([(a.text(), a.icon()) for a in menu.actions() if not a.isSeparator()])
+
+        with mock.patch.object(QMenu, "exec", fake_exec):
+            lw = window.device_list.list_widget
+            window.device_list._show_context_menu(lw.visualItemRect(item).center())
+        self.assertEqual(len(seen), 1)
+        rows = seen[0]
+        self.assertEqual(len(rows), 4, [text for text, _ in rows])
+        for (text, icon), name in zip(rows, ("send", "star", "copy", "trash")):
+            self.assertTrue(_same_icon(icon, menu_icon(name)), (name, text))
+
+    def test_history_context_actions_have_colored_icons(self) -> None:
+        from PyQt6.QtWidgets import QWidget
+
+        from src.gui.history_dialog import HistoryDialog
+        from src.gui.icons import menu_icon
+
+        class _Owner(QWidget):
+            lang = "tr"
+
+            def _existing_path(self, row):
+                return "C:/yok.txt"
+
+            def _open_row(self, row):
+                pass
+
+            def _reveal_row(self, row):
+                pass
+
+        owner = _Owner()
+        self.addCleanup(owner.deleteLater)
+        open_act, reveal_act = HistoryDialog.context_actions(owner, 0)
+        self.assertTrue(_same_icon(open_act.icon(), menu_icon("open_with")))
+        self.assertTrue(_same_icon(reveal_act.icon(), menu_icon("folder")))
+
+
+# Aktarım kartının sağ tık menüsü: sıra, duruma göre açık/pasif satırlar, kartın düğmeleriyle aynı yollar
+TRANSFER_MENU = ["Duraklat", "İptal", "", "Dosyayı Aç", "Klasörde Göster", "", "Tekrar Dene", "Listeden Kaldır"]
+
+
+def _menu_rows(menu) -> list:
+    return [("" if a.isSeparator() else a.text()) for a in menu.actions()]
+
+
+def _enabled(menu) -> list:
+    return [a.isEnabled() for a in menu.actions() if not a.isSeparator()]
+
+
+class TransferCardMenuTest(_QtCase):
+    def setUp(self) -> None:
+        super().setUp()
+        import tempfile
+
+        from src.gui.transfer_item import TransferListWidget
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.file = os.path.join(tmp.name, "rapor.pdf")
+        with open(self.file, "wb") as fh:
+            fh.write(b"x" * 10)
+        self.missing = os.path.join(tmp.name, "yok.pdf")
+        self.list = TransferListWidget()
+        self.list.lang = "tr"
+        self.list.resize(640, 420)
+        self.list.move(-6000, 0)
+        self.list.show()
+        self.addCleanup(self.list.deleteLater)
+        self.addCleanup(self.list.hide)
+        self.device = _device()
+        self.list.retry_target = lambda transfer: self.device if self.device.is_online else None
+        self._seq = 0
+        # Gezgin / varsayılan uygulama asla açılmaz: aç / göster yardımcıları sahte, alt süreç başlatmak hata
+        self.opened, self.revealed = [], []
+        for name, sink in (("open_path", self.opened), ("reveal_path", self.revealed)):
+            patcher = mock.patch(f"src.gui.history_dialog.{name}", side_effect=sink.append)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        popen = mock.patch("subprocess.Popen", side_effect=AssertionError("Gezgin açılmamalı"))
+        popen.start()
+        self.addCleanup(popen.stop)
+
+    def _add(self, status, path=None, direction=None, relative_path=None):
+        from src.models.transfer import Transfer, TransferDirection
+
+        self._seq += 1
+        transfer = Transfer(f"t{self._seq}", path or self.file, "rapor.pdf", 10, "192.168.18.99", "HP",
+                            direction or TransferDirection.SEND, relative_path=relative_path, device_port=38520)
+        transfer.status = status
+        self.list.add_transfer(transfer)
+        self.list.transfers[transfer.transfer_id][1].update_timer.stop()
+        return transfer.transfer_id
+
+    def _menu(self, transfer_id):
+        menu = self.list.context_menu(transfer_id)
+        self.addCleanup(menu.deleteLater)
+        return menu
+
+    def _act(self, menu, text):
+        return next(a for a in menu.actions() if a.text() == text)
+
+    def test_order_labels_and_icons(self) -> None:
+        from src.gui.icons import menu_icon
+        from src.models.transfer import TransferStatus as S
+
+        menu = self._menu(self._add(S.TRANSFERRING))
+        self.assertEqual(_menu_rows(menu), TRANSFER_MENU)
+        self.assertTrue(menu.toolTipsVisible())
+        icons = [a.icon() for a in menu.actions() if not a.isSeparator()]
+        for icon, name in zip(icons, ("pause", "exit", "file", "folder", "update", "trash")):
+            self.assertTrue(_same_icon(icon, menu_icon(name)), name)
+        paused = self._menu(self._add(S.PAUSED))
+        self.assertEqual(_menu_rows(paused)[0], "Sürdür", "tek satır, etiket duruma göre")
+        self.assertTrue(_same_icon(paused.actions()[0].icon(), menu_icon("play")))
+        self.list.lang = "en"
+        self.assertEqual(_menu_rows(self._menu(self._add(S.PAUSED))),
+                         ["Resume", "Cancel", "", "Open File", "Show in Folder", "", "Retry", "Remove from List"])
+
+    def test_entries_are_enabled_only_when_they_make_sense(self) -> None:
+        from src.models.transfer import TransferStatus as S
+
+        #                       Duraklat İptal  Aç     Göster Tekrar Kaldır
+        cases = {S.PENDING:      [False, True, False, False, False, False],
+                 S.CONNECTING:   [False, True, False, False, False, False],
+                 S.TRANSFERRING: [True, True, False, False, False, False],
+                 S.PAUSED:       [True, True, False, False, False, False],
+                 S.COMPLETED:    [False, False, True, True, False, True],
+                 S.FAILED:       [False, False, False, False, True, True],
+                 S.CANCELLED:    [False, False, False, False, True, True]}
+        for status, expected in cases.items():
+            self.assertEqual(_enabled(self._menu(self._add(status))), expected, status)
+        missing = self._menu(self._add(S.COMPLETED, path=self.missing))
+        self.assertEqual(_enabled(missing), [False, False, False, False, False, True], "dosya yerinde değil")
+        self.assertEqual(self._act(missing, "Klasörde Göster").toolTip(), "Dosya artık bu konumda değil")
+
+    def test_retry_is_offered_only_for_a_send_that_can_go_again(self) -> None:
+        from src.models.transfer import TransferDirection, TransferStatus as S
+
+        def retry(transfer_id):
+            action = self._act(self._menu(transfer_id), "Tekrar Dene")
+            tip = action.toolTip()   # ipucu verilmemişse Qt yazının kendisini döndürür (menüde ipucu çıkmaz)
+            return action.isEnabled(), "" if tip == action.text() else tip
+
+        self.assertEqual(retry(self._add(S.FAILED)), (True, ""))
+        self.assertEqual(retry(self._add(S.FAILED, direction=TransferDirection.RECEIVE)),
+                         (False, "Bu dosyayı gönderen taraf yeniden gönderebilir"))
+        self.assertEqual(retry(self._add(S.CANCELLED, relative_path="Tatil/rapor.pdf")),
+                         (False, "Klasördeki dosya için klasörü yeniden gönderin"))
+        self.assertEqual(retry(self._add(S.FAILED, path=self.missing)), (False, "Dosya artık bu konumda değil"))
+        self.device.is_online = False
+        self.assertEqual(retry(self._add(S.FAILED)), (False, "HP çevrimdışı"))
+
+    def test_each_entry_uses_the_cards_existing_path(self) -> None:
+        from src.models.transfer import TransferStatus as S
+
+        seen = []
+        for name in ("pause_transfer", "resume_transfer", "cancel_transfer", "retry_transfer"):
+            getattr(self.list, name).connect(lambda tid, n=name: seen.append((n, tid)))
+        running, paused = self._add(S.TRANSFERRING), self._add(S.PAUSED)
+        self._act(self._menu(running), "Duraklat").trigger()
+        self._act(self._menu(paused), "Sürdür").trigger()
+        self._act(self._menu(running), "İptal").trigger()
+        failed = self._add(S.FAILED)
+        self._act(self._menu(failed), "Tekrar Dene").trigger()
+        self.assertEqual(seen, [("pause_transfer", running), ("resume_transfer", paused),
+                                ("cancel_transfer", running), ("retry_transfer", failed)])
+        done = self._add(S.COMPLETED)
+        self._act(self._menu(done), "Dosyayı Aç").trigger()
+        self._act(self._menu(done), "Klasörde Göster").trigger()
+        self.assertEqual((self.opened, self.revealed), ([self.file], [self.file]))
+        self._act(self._menu(done), "Listeden Kaldır").trigger()
+        self.assertNotIn(done, self.list.transfers)
+        self._act(self._menu(running), "Listeden Kaldır").trigger()   # pasif: süren aktarım listeden düşmez
+        self.assertIn(running, self.list.transfers)
+
+    def test_right_click_on_a_card_opens_its_menu_without_moving_the_selection(self) -> None:
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtGui import QContextMenuEvent
+        from PyQt6.QtWidgets import QMenu
+
+        from src.models.transfer import TransferStatus as S
+
+        first, second = self._add(S.COMPLETED), self._add(S.TRANSFERRING)
+        self.app.processEvents()
+        lw = self.list.list_widget
+        lw.setCurrentItem(self.list.transfers[second][0])
+        item, card = self.list.transfers[first]
+        opened = []
+
+        def fake_exec(menu, *args, **kwargs):
+            opened.append((_enabled(menu), args[0] if args else None))
+
+        where = card.mapToGlobal(QPoint(30, 20))
+        with mock.patch.object(QMenu, "exec", fake_exec):
+            QApplication.sendEvent(card, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(30, 20), where))
+            lw.customContextMenuRequested.emit(QPoint(2, lw.viewport().height() - 2))  # kartsız boşluk: menü yok
+        self.assertEqual(opened, [([False, False, True, True, False, True], where)])
+        self.assertIs(lw.currentItem(), self.list.transfers[second][0], "sağ tık seçimi değiştirmez")
+
+    def test_disabled_rows_are_greyed_text_and_icon(self) -> None:
+        from src.models.transfer import TransferStatus as S
+
+        with open(os.path.join(ROOT, "assets", "styles", "dark.qss"), encoding="utf-8") as fh:
+            qss = fh.read()
+        menu = self._menu(self._add(S.TRANSFERRING))
+        menu.setStyleSheet(qss)
+        menu.ensurePolished()
+        menu.adjustSize()
+        image = menu.grab().toImage()
+        ratio = image.devicePixelRatio()
+
+        def colors(action, x0, x1):
+            geo = menu.actionGeometry(action)
+            return {image.pixelColor(x, y).name()
+                    for y in range(int(geo.top() * ratio), int(geo.bottom() * ratio))
+                    for x in range(int((geo.left() + x0) * ratio), int(min(geo.left() + x1, geo.right()) * ratio))}
+
+        def saturated(name):
+            r, g, b = _rgb(name)
+            return max(r, g, b) - min(r, g, b) > 40
+
+        background = image.pixelColor(2, int(menu.actionGeometry(menu.actions()[0]).center().y() * ratio)).name()
+        trash, open_file = self._act(menu, "Listeden Kaldır"), self._act(menu, "Dosyayı Aç")
+        self.assertTrue(any(saturated(c) for c in colors(self._act(menu, "İptal"), 0, 34)), "açık satırın simgesi renkli")
+        self.assertFalse([c for c in colors(trash, 0, 34) | colors(open_file, 0, 34) if saturated(c)],
+                         "pasif satırın simgesi gri")
+        self.assertIn("#666666", colors(open_file, 38, 10_000), "pasif yazı soluk")
+        self.assertNotIn("#e8e8e8", colors(open_file, 38, 10_000) - {background})
+        self.assertIn("#e8e8e8", colors(self._act(menu, "İptal"), 38, 10_000), "açık satırın yazısı normal")
+
+    def test_main_window_retry_sends_the_same_file_to_the_same_device(self) -> None:
+        from src.models.transfer import Transfer, TransferDirection, TransferStatus as S
+
+        window = self._window()
+        window.device_list.add_device(_device())
+        transfer = Transfer("r1", self.file, "rapor.pdf", 10, "192.168.18.99", "HP", TransferDirection.SEND,
+                            device_port=38520)
+        transfer.status = S.FAILED
+        window.add_transfer(transfer)
+        window.transfer_list.transfers["r1"][1].update_timer.stop()
+        sent = []
+        window.send_files_requested.connect(lambda files, device, folder: sent.append((files, device.ip, folder)))
+        menu = window.transfer_list.context_menu("r1")
+        self.addCleanup(menu.deleteLater)
+        self.assertTrue(self._act(menu, "Tekrar Dene").isEnabled())
+        self._act(menu, "Tekrar Dene").trigger()
+        self.assertEqual(sent, [([self.file], "192.168.18.99", "")])
+        self.assertNotIn("r1", window.transfer_list.transfers, "eski kartın yerini yeni gönderim alır")
+
+        offline = Transfer("r2", self.file, "rapor.pdf", 10, "192.168.18.50", "Yok", TransferDirection.SEND,
+                           device_port=38520)
+        offline.status = S.CANCELLED
+        window.add_transfer(offline)
+        window.transfer_list.transfers["r2"][1].update_timer.stop()
+        boxes = []
+        MessageBox.set_test_hook(lambda box: boxes.append(box.text()))
+        window._retry_transfer("r2")                     # menü açıkken cihaz düştüyse: gönderim yok, nedeni kutuda
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(boxes, ["Yok çevrimdışı"])
+        self.assertIn("r2", window.transfer_list.transfers)
 
 
 class LocalesFormatTest(unittest.TestCase):

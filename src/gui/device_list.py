@@ -12,6 +12,7 @@ from ..utils.locales import configured_language, t
 from ..utils.logger import get_logger
 from datetime import datetime
 
+from .icons import menu_icon
 from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
 from .widgets.hover_fix import settle_hover
@@ -535,30 +536,32 @@ class DeviceListWidget(QWidget):
         device = widget.device
         
         menu = QMenu(self)
+        # Renkli anlam simgeleri (Lumina sağ tık menüsüyle aynı): gönder camgöbeği-yeşil uçak, favori sarı yıldız,
+        # kopyala vurgu, listeden kaldır kırmızı çöp
         
         # Send file action
-        send_action = menu.addAction(t("context_send_file", self.lang))
+        send_action = menu.addAction(menu_icon("send"), t("context_send_file", self.lang))
         send_action.triggered.connect(lambda: self.device_double_clicked.emit(device))
         
         menu.addSeparator()
         
         # Favorite action
         if device.is_favorite:
-            fav_action = menu.addAction(t("context_remove_favorite", self.lang))
+            fav_action = menu.addAction(menu_icon("star"), t("context_remove_favorite", self.lang))
         else:
-            fav_action = menu.addAction(t("context_add_favorite", self.lang))
+            fav_action = menu.addAction(menu_icon("star"), t("context_add_favorite", self.lang))
         fav_action.triggered.connect(lambda: self._toggle_favorite(device))
         
         menu.addSeparator()
         
         # Copy IP action
-        copy_action = menu.addAction(t("copy_ip", self.lang))
+        copy_action = menu.addAction(menu_icon("copy"), t("copy_ip", self.lang))
         copy_action.triggered.connect(lambda: self._copy_ip_to_clipboard(device.ip))
 
         menu.addSeparator()
 
         # Remove from list action
-        remove_action = menu.addAction(t("remove_from_list", self.lang))
+        remove_action = menu.addAction(menu_icon("trash"), t("remove_from_list", self.lang))
         remove_action.triggered.connect(lambda: self._request_remove(device))
 
         # Show menu

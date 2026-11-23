@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRectF, QTimer
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QFormLayout,
     QGridLayout,
-    QTabWidget,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,7 +32,7 @@ from ..utils.ports import DEFAULT_TRANSFER_PORT
 from ..utils.locales import AUTO_LANGUAGE, get_active_language, language_choices, t, create_language_icon
 from .widgets.stepper_spinbox import StepperSpinBox
 from .widgets.glyph_icons import glyph_color
-from .icons import trash_icon, history_icon, info_icon
+from .icons import trash_icon, history_icon, info_icon, menu_icon
 from .chrome_dialog import ChromeDialog
 from .message_box import MessageBox
 from .palette import ACCENTS, DEFAULT_ACCENT, accent_color, accent_label, is_dark
@@ -84,8 +84,9 @@ class SettingsDialog(ChromeDialog):
 
     _FIELD_H = 36
     _LABEL_W = 145
-    _MIN_W = 700
-    _MAX_W = 820
+    _MIN_W = 640  # sağdaki sayfa paneli (kenar çubuğu ayrıca eklenir)
+    _MAX_W = 760
+    _BODY_SPACING = 12
 
     def __init__(self, parent=None):
         self.config = get_config()
@@ -110,22 +111,50 @@ class SettingsDialog(ChromeDialog):
         root.setContentsMargins(14, 8, 14, 14)
         root.setSpacing(0)
 
-        self.tab_widget = QTabWidget()
-        self.tab_widget.setObjectName("settingsTabs")
-        self.tab_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.tab_widget.tabBar().setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.tab_widget.setDocumentMode(True)
-        self.tab_widget.tabBar().setExpanding(True)
-        self.tab_widget.tabBar().setDrawBase(False)
+        # Dört uygulamada aynı iskelet (Lumina): solda renkli simgeli sekmeler, sağda sayfa paneli
+        body_row = QHBoxLayout()
+        body_row.setContentsMargins(0, 4, 0, 10)
+        body_row.setSpacing(self._BODY_SPACING)
 
-        corner = QWidget()
-        corner.setObjectName("settingsTabCorner")
-        self.tab_widget.setCornerWidget(corner, Qt.Corner.TopRightCorner)
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        side_layout = QVBoxLayout(self.sidebar)
+        side_layout.setContentsMargins(8, 8, 8, 8)
+        side_layout.setSpacing(6)
 
-        # "&" sekme başlığında hızlandırıcı sayılıp kaybolmasın ("Network & Advanced"): kaçışlı yazılır
-        self.tab_widget.addTab(self._create_general_tab(), t("tab_general", self.lang).replace("&", "&&"))
-        self.tab_widget.addTab(self._create_transfer_tab(), t("tab_transfer", self.lang).replace("&", "&&"))
-        self.tab_widget.addTab(self._create_advanced_tab(), t("tab_advanced", self.lang).replace("&", "&&"))
+        self.settings_pane = QFrame()
+        self.settings_pane.setObjectName("settingsPane")
+        pane_layout = QVBoxLayout(self.settings_pane)
+        pane_layout.setContentsMargins(10, 10, 10, 10)
+        self.stack = QStackedWidget()
+        self.stack.setObjectName("settingsStack")
+        pane_layout.addWidget(self.stack)
+
+        self.nav_buttons: list[QPushButton] = []
+        pages = (
+            (self._create_general_tab, "tab_general", "settings"),     # mor dişli
+            (self._create_transfer_tab, "tab_transfer", "send"),       # aktarım
+            (self._create_advanced_tab, "tab_advanced", "network"),    # ağ
+        )
+        for index, (build, key, icon) in enumerate(pages):
+            self.stack.addWidget(build())
+            # "&" düğme yazısında hızlandırıcı sayılıp kaybolmasın ("Network & Advanced"): kaçışlı yazılır
+            btn = QPushButton(t(key, self.lang).replace("&", "&&"), self.sidebar)
+            btn.setObjectName("nav_btn")
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setFixedHeight(38)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setIcon(menu_icon(icon))
+            btn.clicked.connect(lambda _=False, i=index: self._switch_tab(i))
+            side_layout.addWidget(btn)
+            self.nav_buttons.append(btn)
+        side_layout.addStretch()
+        self._fit_sidebar()
+        self.nav_buttons[0].setChecked(True)
+
+        body_row.addWidget(self.sidebar)
+        body_row.addWidget(self.settings_pane, 1)
 
         sep = QFrame()
         sep.setObjectName("settingsFooterSep")
@@ -162,41 +191,59 @@ class SettingsDialog(ChromeDialog):
         footer.addWidget(self.cancel_btn)
         footer.addWidget(self.save_btn)
 
-        root.addWidget(self.tab_widget)
+        root.addLayout(body_row, 1)
         root.addWidget(sep)
         root.addLayout(footer)
 
         for cb in self.findChildren(QCheckBox):
             cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+    def _fit_sidebar(self) -> None:
+        """Seçili sekme kalın yazılır; en uzun ad kalınken de sığsın (Lumina ile aynı hesap)."""
+        font = QFont(self.nav_buttons[0].font())
+        font.setPixelSize(13)
+        font.setBold(True)
+        text = max(QFontMetrics(font).horizontalAdvance(b.text().replace("&&", "&")) for b in self.nav_buttons)
+        # 8 + 8 kenar boşluğu + 2 çerçeve, 10 sol dolgu, 16 simge + 4 ara, 16 sağ dolgu, 8 nefes payı
+        self.sidebar.setFixedWidth(max(150, text + 72))
+
+    def _switch_tab(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        for i, btn in enumerate(self.nav_buttons):
+            btn.setChecked(i == index)
+
     def prepare_content(self) -> None:
-        """Pencereyi en yüksek sekmeye göre boyutla — fazla boşluk kalmasın (çerçeve payı dahil)."""
+        """Pencereyi en yüksek sayfaya göre boyutla — fazla boşluk kalmasın (çerçeve payı dahil)."""
         self.ensurePolished()
         for widget in self.findChildren(QWidget):
             widget.ensurePolished()
         max_w, max_h = self._MIN_W, 0
-        current = self.tab_widget.currentIndex()
-        for i in range(self.tab_widget.count()):
-            self.tab_widget.setCurrentIndex(i)
-            page = self.tab_widget.widget(i)
+        current = self.stack.currentIndex()
+        for i in range(self.stack.count()):
+            self.stack.setCurrentIndex(i)
+            page = self.stack.widget(i)
             if page is None:
                 continue
             page.adjustSize()
             hint = page.sizeHint()
             max_w = max(max_w, hint.width())
             max_h = max(max_h, hint.height())
-        self.tab_widget.setCurrentIndex(current)
+        self.stack.setCurrentIndex(current)
 
         margins = self.body.layout().contentsMargins()
+        pane = self.settings_pane.layout().contentsMargins()
         inner_h = (
-            self.tab_widget.tabBar().sizeHint().height()
-            + self.save_btn.sizeHint().height()
+            self.save_btn.sizeHint().height()
             + margins.top() + margins.bottom()
-            + 28
+            + pane.top() + pane.bottom()
+            + 4 + 10 + 1 + 10  # gövde satırı üst/alt boşluğu, ayırıcı, alt çubuk üst boşluğu
+            + 8
         )
         chrome = self.chrome_size()
-        width = min(max(max_w + margins.left() + margins.right() + 24, self._MIN_W), self._MAX_W)
-        height = max_h + inner_h + chrome.height()
+        # sağdaki sayfa alanı eskisi kadar geniş kalır; kenar çubuğu yanına eklenir
+        content = min(max(max_w + pane.left() + pane.right() + 4, self._MIN_W), self._MAX_W)
+        width = content + self.sidebar.width() + self._BODY_SPACING + margins.left() + margins.right()
+        height = max(max_h + inner_h, self.sidebar.sizeHint().height() + inner_h) + chrome.height()
         self.setFixedSize(width + chrome.width(), height)
 
     @staticmethod
@@ -467,7 +514,7 @@ class SettingsDialog(ChromeDialog):
         self.history_btn.clicked.connect(self._open_history)
 
         self.clear_history_btn = QPushButton()
-        self.clear_history_btn.setIcon(trash_icon("#ef4444"))
+        self.clear_history_btn.setIcon(trash_icon(glyph_color(is_dark(), "muted")))  # nötr; kırmızı onay kutusunda
         self.clear_history_btn.setIconSize(QSize(18, 18))
         self.clear_history_btn.setObjectName("settingsFooterBtn")
         self.clear_history_btn.setFixedSize(self._FIELD_H, self._FIELD_H)
@@ -696,6 +743,7 @@ class SettingsDialog(ChromeDialog):
             self.refresh_chrome()
             self.about_btn.setIcon(info_icon(accent_color()))
             self.history_btn.setIcon(history_icon(glyph_color(is_dark(), "muted")))
+            self.clear_history_btn.setIcon(trash_icon(glyph_color(is_dark(), "muted")))
 
     def reject(self) -> None:  # noqa: D401
         """İptal / Esc / ✕: önizlenen tema, dil ve vurgu eski hâline döner."""

@@ -241,10 +241,12 @@ QPushButton#clearListBtn {
     font-weight: 600;
 }
 
+/* "Gönderimleri İptal Et" duruşta kardeşi "Listeyi Temizle" gibi nötr; kırmızı yalnızca üzerine gelince
+   (onay sorulmadan çalışır, son anda uyarır) */
 QPushButton#cancelAllBtn {
     background-color: #252525;
-    color: #f87171;
-    border: 1px solid #5a2c2c;
+    color: #d0d0d0;
+    border: 1px solid #3a3a3a;
     border-radius: 8px;
     padding: 3px 10px;
     min-height: 24px;
@@ -407,10 +409,12 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
-/* Check Box - Neumorphic */
+/* Check Box: FlexiKey / MediaCompressor / Lumina ile aynı (18 px kutu, 5 px köşe, 1 px kenar,
+   seçiliyken vurgu dolgu + beyaz tik; pasifte gri). #1976D2 / #2196F3 seçilen vurguya çevrilir.
+   Durum kuralları aynı özgüllükte, sıra önemli. */
 QCheckBox {
     color: #e8e8e8;
-    spacing: 12px;
+    spacing: 10px;
     outline: none;
 }
 
@@ -418,42 +422,43 @@ QCheckBox:focus {
     outline: none;
 }
 
-QCheckBox::indicator {
-    width: 22px;
-    height: 22px;
-    border: 2px solid #0a0a0a;
-    border-top-color: #151515;
-    border-left-color: #151515;
-    border-radius: 7px;
-    background-color: #1f1f1f;
+QCheckBox:disabled {
+    color: #9e9e9e;
 }
 
-QCheckBox::indicator:checked {
-    background-color: #2196F3;
-    border-color: #1976D2;
-    border-top-color: #42A5F5;
-    border-left-color: #42A5F5;
-    image: url("__ASSET_ICONS__/check.svg");
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background-color: #262626;
+    border: 1px solid #454545;
 }
 
 QCheckBox::indicator:unchecked:hover {
-    background-color: #252525;
+    background-color: #1e1e1e;
     border-color: #2196F3;
 }
 
-QCheckBox::indicator:checked:hover {
-    background-color: #42A5F5;
-    border-color: #64B5F6;
-    border-top-color: #90CAF9;
-    border-left-color: #90CAF9;
-}
-
-QCheckBox::indicator:unchecked:pressed {
-    background-color: #1f1f1f;
-}
-
-QCheckBox::indicator:checked:pressed {
+QCheckBox::indicator:checked {
     background-color: #1976D2;
+    border-color: #1976D2;
+    image: url("__CHECK_TICK__");
+}
+
+QCheckBox::indicator:checked:hover {
+    background-color: #2196F3;
+    border-color: #2196F3;
+}
+
+QCheckBox::indicator:unchecked:disabled {
+    background-color: transparent;
+    border-color: #2e2e2e;
+}
+
+QCheckBox::indicator:checked:disabled {
+    background-color: #454545;
+    border-color: #454545;
+    image: url("__CHECK_TICK_MUTED__");
 }
 
 /* List Widget - Enhanced Neumorphic Container */
@@ -852,6 +857,10 @@ QMenu::item:checked:selected {
     font-weight: 700;
 }
 
+QMenu::item:disabled {
+    color: #666666;  /* pasif satır soluk yazılır (düğmelerin pasif rengi); simgesini Qt soldurur */
+}
+
 QMenu::indicator {
     width: 0px;
     height: 0px;
@@ -918,48 +927,54 @@ QWidget#settingsDialog QFormLayout {
     spacing: 8px;
 }
 
-QWidget#settingsDialog QTabWidget::pane {
-    padding-top: 8px;
+/* Ayarlar: solda kenar çubuğu, sağda sayfa paneli (dört uygulamada aynı iskelet, Lumina `dialog_stylesheet`).
+   Seçili sekme: vurgu tonlu hafif zemin + vurgu yazı + solda 3 px vurgu çizgisi; __NAV_TINT__ / __NAV_INK__
+   `MainWindow.apply_theme` içinde seçili vurguya göre hesaplanır. */
+QFrame#sidebar {
+    background-color: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
 }
 
-QTabWidget#settingsTabs::pane {
+QPushButton#nav_btn {
+    text-align: left;
+    padding: 0px 10px 0px 7px;
+    color: #9e9e9e;
+    font-size: 13px;
+    font-weight: 500;
+    background: transparent;
     border: none;
-    border-top: 1px solid #2a2a2a;
+    border-left: 3px solid transparent;
+    border-radius: 6px;
+    min-height: 38px;
+    max-height: 38px;
+    outline: none;
+}
+
+QPushButton#nav_btn:hover {
+    background-color: #2a2a2a;
+    color: #e8e8e8;
+}
+
+QPushButton#nav_btn:pressed {
+    border-color: transparent;
+}
+
+QPushButton#nav_btn:checked {
+    background-color: __NAV_TINT__;
+    color: __NAV_INK__;
+    border-left: 3px solid #2196F3;
+    font-weight: 700;
+}
+
+QFrame#settingsPane {
     background-color: #1c1c1c;
-    top: -1px;
-    padding: 8px 0px 0px 0px;
-    margin: 0px;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
 }
 
-QTabWidget#settingsTabs QTabBar::tab {
-    background-color: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0px;
-    padding: 8px 14px;
-    color: #bdbdbd;
-    margin-right: 2px;
-    min-width: 72px;
-    outline: none;
-}
-
-QTabWidget#settingsTabs QTabBar::tab:focus {
-    outline: none;
-}
-
-QTabWidget#settingsTabs QTabBar::tab:selected {
-    border-bottom: 2px solid #42A5F5;
-    color: #ffffff;
-    font-weight: 600;
-}
-
-QTabWidget#settingsTabs QTabBar::tab:hover {
-    background-color: rgba(66, 165, 245, 0.10);
-    color: #f0f0f0;
-}
-
-QWidget#settingsTabCorner {
-    background-color: #1a1a1a;
+QStackedWidget#settingsStack {
+    background-color: transparent;  /* genel QWidget zemini panelin içinde gri kutu olarak görünmesin */
 }
 
 QWidget#settingsPage {

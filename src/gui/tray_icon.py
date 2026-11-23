@@ -10,10 +10,8 @@ from ..utils.platform_utils import is_windows
 from ..utils.theme import ui_font_families
 from .icons import (
     theme_system_icon, theme_dark_icon, theme_light_icon,
-    eye_icon, settings_gear_icon, door_exit_icon,
-    globe_icon, update_arrow_icon,
+    menu_icon,
 )
-from .palette import accent_color
 
 
 class TrayIcon(QObject):
@@ -79,10 +77,11 @@ class TrayIcon(QObject):
         [Güncelle · vX] · — · Göster/Gizle · — · Ayarlar · Tema ▸ · Dil ▸ · — · Çıkış"""
         menu = QMenu()
         self.menu = menu
-        accent = accent_color()
+        # Renkli menü simgeleri (Lumina ⋯ menüsüyle aynı anlam/renk): güncelle yeşil, göster çivit göz, ayarlar mor
+        # dişli, dil vurgu küre, çıkış kırmızı kapı. Tema alt menüsü kendi tema simgesini korur.
 
         # Güncelleme satırı menünün EN ÜSTÜNDE (altında ayırıcı); yalnızca güncelleme bekliyorsa görünür
-        self.update_action = QAction(update_arrow_icon(accent), t("tray_update_now", self.lang), menu)
+        self.update_action = QAction(menu_icon("update"), t("tray_update_now", self.lang), menu)
         update_font = self.update_action.font()
         update_font.setBold(True)
         self.update_action.setFont(update_font)
@@ -93,13 +92,13 @@ class TrayIcon(QObject):
         self.update_separator.setVisible(False)
 
         # Pencere durumuna göre dinamik: açıkken "Gizle", gizliyken "Göster"
-        self.show_action = QAction(eye_icon(accent), t("tray_show", self.lang), menu)
+        self.show_action = QAction(menu_icon("view"), t("tray_show", self.lang), menu)
         self.show_action.triggered.connect(self._toggle_window)
         menu.addAction(self.show_action)
 
         menu.addSeparator()
 
-        self.settings_action = QAction(settings_gear_icon(accent), t("settings", self.lang), menu)
+        self.settings_action = QAction(menu_icon("settings"), t("settings", self.lang), menu)
         self.settings_action.triggered.connect(self.open_settings.emit)
         menu.addAction(self.settings_action)
 
@@ -122,7 +121,7 @@ class TrayIcon(QObject):
             self._theme_actions[key] = act
 
         self.lang_menu = menu.addMenu(t("language", self.lang))
-        self.lang_menu.setIcon(globe_icon(accent))
+        self.lang_menu.setIcon(menu_icon("globe"))
         self.lang_group = QActionGroup(menu)
         self.lang_group.setExclusive(True)
         self._lang_actions: dict[str, QAction] = {}
@@ -136,7 +135,7 @@ class TrayIcon(QObject):
 
         menu.addSeparator()
 
-        self.quit_action = QAction(door_exit_icon("#ef4444"), t("tray_quit", self.lang), menu)
+        self.quit_action = QAction(menu_icon("exit"), t("tray_quit", self.lang), menu)
         self.quit_action.triggered.connect(self.quit_app.emit)
         menu.addAction(self.quit_action)
 
@@ -168,12 +167,12 @@ class TrayIcon(QObject):
             self.show_window.emit()
 
     def refresh_icons(self) -> None:
-        """Vurgu değişince menü simgeleri yeni vurguyla yeniden boyanır."""
-        accent = accent_color()
-        self.show_action.setIcon(eye_icon(accent))
-        self.settings_action.setIcon(settings_gear_icon(accent))
-        self.lang_menu.setIcon(globe_icon(accent))
-        self.update_action.setIcon(update_arrow_icon(accent))
+        """Vurgu değişince menü simgeleri yeniden boyanır (mavi/gök aileden olanlar — dil küresi — vurguyu izler)."""
+        self.show_action.setIcon(menu_icon("view"))
+        self.settings_action.setIcon(menu_icon("settings"))
+        self.lang_menu.setIcon(menu_icon("globe"))
+        self.update_action.setIcon(menu_icon("update"))
+        self.quit_action.setIcon(menu_icon("exit"))
 
     def set_theme_choice(self, theme: str):
         theme_icons = {
@@ -190,7 +189,7 @@ class TrayIcon(QObject):
     def set_language_choice(self, lang_choice: str, active_lang: str | None = None):
         active_lang = active_lang or configured_language()
         if hasattr(self, "lang_menu"):
-            self.lang_menu.setIcon(globe_icon(accent_color()))
+            self.lang_menu.setIcon(menu_icon("globe"))
         labels = {code: label for code, label in language_choices(include_auto=True, lang=active_lang)}
         for code, act in self._lang_actions.items():
             act.setChecked(code == lang_choice)

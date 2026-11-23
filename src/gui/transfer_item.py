@@ -1,7 +1,8 @@
 """Transfer item widget"""
 
 from PyQt6.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem, QLabel, 
-                            QHBoxLayout, QVBoxLayout, QPushButton, QProgressBar)
+                            QHBoxLayout, QVBoxLayout, QPushButton, QProgressBar, QMenu)
+import os
 import time
 
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QSize, QTimer
@@ -12,6 +13,8 @@ from ..utils.error_text import localize_error
 from ..utils.helpers import format_bytes, format_duration, format_eta, format_speed
 from ..utils.locales import configured_language, t
 from ..utils.transfer_labels import wait_labels
+from . import history_dialog
+from .icons import menu_icon
 from .widgets.card_list import CardListWidget
 from .widgets.elided_label import ElidedLabel
 from .widgets.glyph_icons import glyph_color, glyph_icon
@@ -467,6 +470,7 @@ class TransferListWidget(QWidget):
     cancel_transfer = pyqtSignal(str)
     cancel_all_requested = pyqtSignal()
     clear_requested = pyqtSignal()
+    retry_transfer = pyqtSignal(str)  # sağ tık "Tekrar Dene": başarısız / iptal edilen gönderim yeniden gönderilir
 
     # Biten kart bu kadar yerinde kalır (kullanıcı tamamlandığını görsün), sonra bitenlerin arasına iner
     REGROUP_DELAY_MS = 1500
@@ -479,6 +483,8 @@ class TransferListWidget(QWidget):
         self._regroup_timer = QTimer(self)
         self._regroup_timer.setSingleShot(True)
         self._regroup_timer.timeout.connect(self._regroup)
+        # Tekrar Dene'nin gideceği cihaz: transfer -> çevrimiçi Device ya da None (ana pencere cihaz listesinden verir)
+        self.retry_target = None
         self._setup_ui()
     
     def _setup_ui(self):
@@ -542,6 +548,9 @@ class TransferListWidget(QWidget):
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.setSpacing(6)
+        # Sağ tık menüsü: seçimi değiştirmez (cihaz listesindeki gibi), kartın düğmeleriyle aynı yollara gider
+        self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         
         layout.addWidget(header)
         layout.addWidget(self.list_widget)
@@ -626,6 +635,87 @@ class TransferListWidget(QWidget):
             # Update count
             self._update_count()
     
+    # ------------------------------------------------------------------ sağ tık menüsü
+    def transfer_id_at(self, pos) -> str | None:
+        """Liste görünümündeki (viewport) noktanın altındaki kartın transfer kimliği."""
+        item = self.list_widget.itemAt(pos)
+        for transfer_id, (row, _) in self.transfers.items():
+            if row is item:
+                return transfer_id
+        return None
+
+    def _show_context_menu(self, pos):
+        transfer_id = self.transfer_id_at(pos) if pos is not None else None
+        menu = self.context_menu(transfer_id) if transfer_id else None
+        if menu is None:
+            return
+        try:
+            menu.exec(self.list_widget.viewport().mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
+
+    def retry_block(self, transfer: Transfer) -> str:
+        """Tekrar Dene neden kapalı ("" = yeniden gönderilebilir)."""
+        if transfer.direction != TransferDirection.SEND:
+            return t("retry_sender_only", self.lang)
+        if getattr(transfer, "relative_path", None) is not None:
+            return t("retry_folder_item", self.lang)  # tek dosya klasör yapısı olmadan gider: klasör yeniden gönderilir
+        if not transfer.filepath or not os.path.isfile(transfer.filepath):
+            return t("history_file_missing", self.lang)
+        if self.retry_target is None or self.retry_target(transfer) is None:
+            return t("drop_target_offline", self.lang).format(name=transfer.device_name)
+        return ""
+
+    def context_menu(self, transfer_id: str) -> QMenu | None:
+        """Kartın menüsü: Duraklat/Sürdür · İptal · — · Dosyayı Aç · Klasörde Göster · — · Tekrar Dene · Listeden Kaldır.
+
+        Duruma uymayan satır görünür kalır ama pasiftir (soluk yazı ve simge; nedeni varsa ipucunda)."""
+        entry = self.transfers.get(transfer_id)
+        if entry is None:
+            return None
+        widget = entry[1]
+        transfer = widget.transfer
+        status, lang = transfer.status, self.lang
+        menu = QMenu(self)
+        menu.setObjectName("transferMenu")
+        menu.setToolTipsVisible(True)
+
+        paused = status == TransferStatus.PAUSED
+        pause = menu.addAction(menu_icon("play" if paused else "pause"), t("menu_resume" if paused else "menu_pause", lang))
+        pause.setEnabled(status in (TransferStatus.TRANSFERRING, TransferStatus.PAUSED))  # kartın düğmesiyle aynı an
+        pause.triggered.connect(lambda *_: widget._on_pause_clicked())
+        cancel = menu.addAction(menu_icon("exit"), t("cancel", lang))
+        cancel.setEnabled(status not in _FINISHED)
+        cancel.triggered.connect(lambda *_: widget._on_cancel_clicked())
+        menu.addSeparator()
+
+        path = transfer.filepath or ""
+        done = status == TransferStatus.COMPLETED
+        exists = done and os.path.isfile(path)
+        open_act = menu.addAction(menu_icon("file"), t("open_file", lang))
+        open_act.triggered.connect(lambda *_: history_dialog.open_path(path))
+        reveal = menu.addAction(menu_icon("folder"), t("show_in_folder", lang))
+        reveal.triggered.connect(lambda *_: history_dialog.reveal_path(path))
+        for action in (open_act, reveal):
+            action.setEnabled(exists)
+            if done and not exists:
+                action.setToolTip(t("history_file_missing", lang))
+        menu.addSeparator()
+
+        retry = menu.addAction(menu_icon("update"), t("retry", lang))
+        if status in (TransferStatus.FAILED, TransferStatus.CANCELLED):
+            reason = self.retry_block(transfer)
+            retry.setEnabled(not reason)
+            if reason:
+                retry.setToolTip(reason)
+        else:
+            retry.setEnabled(False)
+        retry.triggered.connect(lambda *_: self.retry_transfer.emit(transfer_id))
+        remove = menu.addAction(menu_icon("trash"), t("remove_from_list", lang))
+        remove.setEnabled(not transfer.is_active)
+        remove.triggered.connect(lambda *_: self.remove_transfer(transfer_id))
+        return menu
+
     def _on_cancel_all_clicked(self):
         """Cancel all active transfers"""
         for transfer_id, (_, widget) in list(self.transfers.items()):
