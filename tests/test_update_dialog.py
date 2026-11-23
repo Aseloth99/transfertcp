@@ -92,8 +92,18 @@ class DownloadingStateTest(DialogCase):
         self.assertFalse(dlg.progress_label.isHidden())
         dlg.update_download_progress(10 * 1024 * 1024, 40 * 1024 * 1024, 2.5)
         self.assertEqual(dlg.progress_bar.value(), 25)
-        self.assertIn("10.00 MB / 40.00 MB (25%)", dlg.progress_label.text())
+        self.assertIn("10.00 MB / 40.00 MB (%25)", dlg.progress_label.text())
+        dlg.progress_bar.finish_animation()
+        self.assertEqual(dlg.progress_bar.text(), "%25", "the bar and the line write the percent alike")
         self.assertIn("2.50 MB/s", dlg.progress_label.text())
+
+    def test_percent_in_english(self):
+        dlg = self.dialog(lang="en")
+        dlg.show_downloading_state()
+        dlg.update_download_progress(10 * 1024 * 1024, 40 * 1024 * 1024, 0.0)
+        dlg.progress_bar.finish_animation()
+        self.assertIn("(25%)", dlg.progress_label.text())
+        self.assertEqual(dlg.progress_bar.text(), "25%")
 
     def test_unknown_total_shows_a_busy_bar(self):
         dlg = self.dialog()

@@ -234,8 +234,9 @@ class TransferItemWidget(QWidget):
         else:
             progress = int(transfer.progress)
         self.progress_bar.setValue(progress)
-        self.progress_bar.setFormat(f"{progress}%")
-        self.percent_label.setText(f"{progress}%")
+        pct = t("pct", self.lang).format(progress)  # "%41" in Turkish, "41%" in English
+        self.progress_bar.setFormat(pct)
+        self.percent_label.setText(pct)
         
         # Update status
         status_text = self._get_status_text()

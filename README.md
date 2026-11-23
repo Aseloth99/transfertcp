@@ -63,6 +63,8 @@
 
 A single-file Windows build is available from **https://macik.com.tr**. It needs no installation. Run it on both computers. If Windows Defender Firewall asks on first start, allow access on **private networks**.
 
+Each [GitHub release](https://github.com/Aseloth99/transfertcp/releases/latest) also carries an exe built from this repository's source at that version's tag. It takes its updates from the same channel as the official build.
+
 ### From source
 
 Requires Python 3.12 and a desktop session.

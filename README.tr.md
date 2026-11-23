@@ -63,6 +63,8 @@
 
 Tek dosyalık Windows sürümü **https://macik.com.tr** adresinde bulunur. Kurulum gerektirmez; iki bilgisayarda da çalıştırın. Windows Güvenlik Duvarı ilk açılışta izin isterse **özel ağlar** için izin verin.
 
+Her [GitHub sürümünde](https://github.com/Aseloth99/transfertcp/releases/latest) o sürümün etiketindeki kaynaktan derlenmiş bir exe de bulunur. Güncellemelerini resmî sürümle aynı kanaldan alır.
+
 ### Kaynaktan
 
 Python 3.12 ve bir masaüstü oturumu gerekir.

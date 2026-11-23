@@ -189,7 +189,7 @@ class TransferCardTest(unittest.TestCase):
         transfer.start()
         transfer.bytes_transferred = 2_500_000
         card._update_ui()
-        self.assertEqual(card.percent_label.text(), "25%")
+        self.assertEqual(card.percent_label.text(), "%25")  # Turkish writes the sign first
         self.assertFalse(card.cancel_btn.icon().isNull(), "iptal düğmesi çizilmiş simge taşımalı (emoji değil)")
         self.assertEqual(card.cancel_btn.text(), "")
         transfer.status = TransferStatus.PAUSED
