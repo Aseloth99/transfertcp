@@ -79,7 +79,7 @@ class UpdateChecker(QObject):
     notice_received = pyqtSignal(object)  # remote_notice.Notice (duyuru satırı)
 
     # Update check configuration - Edit these values directly in this file
-    CURRENT_VERSION = "1.0.5"  # Update this version number when releasing
+    CURRENT_VERSION = "1.0.6"  # Update this version number when releasing
     UPDATE_CHECK_URL = "https://macik.com.tr/api/updates/check"  
     APP_NAME = "TransferTCP"
     # Açılışta: son denetim bundan eskiyse hemen denetlenir (uzun süre açılmayanlar yeni sürümü hemen görür).

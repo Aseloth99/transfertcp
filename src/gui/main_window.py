@@ -36,6 +36,7 @@ from .icons import (
     folder_icon,
     settings_gear_icon,
     checkmark_png,
+    chevron_png,
     menu_icon,
 )
 
@@ -255,7 +256,8 @@ class CustomTitleBar(QWidget):
         
         # Title
         self.title_label = QLabel("TransferTCP")
-        self.title_label.setStyleSheet("font-size: 10pt; font-weight: 600; padding: 0px; margin: 0px;")
+        # pencere başlığı dört uygulamada 9.5 pt / 600 (ortak başlık çubuğu `mb_title_label` ile aynı)
+        self.title_label.setStyleSheet("font-size: 9.5pt; font-weight: 600; padding: 0px; margin: 0px;")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         
         layout.addWidget(self.icon_label)
@@ -1088,6 +1090,11 @@ class MainWindow(QMainWindow):
         app_for_theme = QApplication.instance()
         if app_for_theme is not None:
             app_for_theme.setProperty("tt_dark", actual_theme == "dark")  # kodla cizilen simgeler bunu okur
+            # gövde yazısı dört uygulamada 10 pt (Windows varsayılanı 9 pt; Lumina/FlexiKey/MediaCompressor 10 pt)
+            base_font = app_for_theme.font()
+            if base_font.pointSizeF() != 10:
+                base_font.setPointSizeF(10)
+                app_for_theme.setFont(base_font)
 
         theme_file = get_asset_path("styles", f"{actual_theme}.qss")
         set_accent_override(accent)  # None: kayıtlı vurgu (önizleme bitti)
@@ -1104,6 +1111,9 @@ class MainWindow(QMainWindow):
                     stylesheet = stylesheet.replace(
                         "__CHECK_TICK_MUTED__", checkmark_png("#9e9e9e" if actual_theme == "dark" else "#616161"))
                     stylesheet = stylesheet.replace("__CHECK_TICK__", checkmark_png("#ffffff"))
+                    # açılır liste oku: dört uygulamada aynı çizim, soluk yazı renginde
+                    stylesheet = stylesheet.replace(
+                        "__COMBO_CHEVRON__", chevron_png("#9e9e9e" if actual_theme == "dark" else "#616161"))
 
                     # Dynamic accent color replacement
                     if accent_name != "blue":

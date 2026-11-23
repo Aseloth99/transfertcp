@@ -962,6 +962,149 @@ class TransferCardMenuTest(_QtCase):
         self.assertIn("r2", window.transfer_list.transfers)
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Dört uygulamada aynı görünüm (23 Kasım 2026): düğme köşeleri (normal/vurgulu 10 px, küçük/araç 6 px), 36 px
+# açılır liste ve aynı satırdaki alanlar, aynı chevron oku (soluk yazı renginde, düz ok alanı), MediaCompressor
+# ölçüsünde kaydırma çubuğu, ortak yazı boyları (gövde 10 pt, pencere başlığı 9.5 pt/600, bölüm başlığı 12 pt/700,
+# ipucu 9 pt, düğme 10 pt/600, küçük düğme 9 pt/600).
+# ---------------------------------------------------------------------------------------------------------------
+def _flat_qss(qss: str) -> str:
+    return " ".join(re.sub(r"/\*.*?\*/", " ", qss, flags=re.S).split())
+
+
+def _strict_rule(qss: str, selector: str) -> str:
+    """Seçici kuralın başında durmalı (ör. "QPushButton" araması "QMessageBox QPushButton"a takılmasın)."""
+    match = re.search(r"(?:^|\})\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", _flat_qss(qss))
+    assert match, selector
+    return match.group(1).strip()
+
+
+class SharedLookTest(_QtCase):
+    def _sheets(self, accent="violet"):
+        from src.gui import palette
+
+        self.addCleanup(palette.set_accent_override, None)
+        window = self._window()
+        for theme in ("dark", "light"):
+            window.apply_theme(theme, accent)
+            yield theme, window.styleSheet(), palette.ACCENTS[accent]["accent"]
+
+    def test_button_corners_normal_and_primary_10_small_6(self) -> None:
+        for theme, qss, _accent in self._sheets():
+            flat = _flat_qss(qss)
+            for selector in ("QPushButton", "QWidget#settingsDialog QPushButton#settingsFooterBtn",
+                             "QPushButton#dialogCompactBtn"):
+                self.assertIn("border-radius: 10px;", _strict_rule(qss, selector), (theme, selector))
+            self.assertRegex(flat, r"QPushButton#manualSecondaryButton \{[^}]*border-radius: 10px;")
+            for selector in ('QPushButton[class="menu-button"]', 'QPushButton[class="title-button"]',
+                             'QPushButton[class="title-button-close"]', "QPushButton#clearListBtn",
+                             "QPushButton#cancelAllBtn", "QPushButton#transferActionBtn, QPushButton#transferCancelBtn",
+                             "QPushButton#favoriteBtn"):
+                self.assertIn("border-radius: 6px;", _strict_rule(qss, selector), (theme, selector))
+            self.assertNotRegex(flat, r"QPushButton[^{]*\{[^}]*border-radius: 14px", "eski 14 px koyu tema düğmesi")
+        self.assertIn("border-radius: 6px;", _strict_rule(qss, "QToolButton"), "açık tema araç düğmesi")
+
+    def test_combo_rows_and_manual_fields_are_36_px(self) -> None:
+        from PyQt6.QtWidgets import QComboBox, QLineEdit, QWidget
+
+        from src.gui.manual_device_dialog import ManualDeviceDialog
+        from src.gui.settings import SettingsDialog
+        from src.gui.widgets.stepper_spinbox import StepperSpinBox
+        from src.utils.config import get_config
+
+        window = self._window()
+        config = get_config()
+        config.set("ui", "language", "tr")
+        for theme in ("dark", "light"):
+            config.set("ui", "theme", theme)
+            window.apply_theme(theme, "cyan")
+            dialog = SettingsDialog(window)
+            self.addCleanup(dialog.deleteLater)
+            dialog.prepare_content()
+            dialog.show()
+            seen = 0
+            for index in range(len(dialog.nav_buttons)):
+                dialog._switch_tab(index)
+                self.app.processEvents()
+                for w in dialog.stack.widget(index).findChildren(QWidget):
+                    field = isinstance(w, (QComboBox, StepperSpinBox)) or (
+                        isinstance(w, QLineEdit) and w.objectName() == "settingsLineEdit")
+                    if field and w.isVisible():
+                        seen += 1
+                        self.assertEqual(w.height(), 36, (theme, index, type(w).__name__, w.objectName()))
+            self.assertGreaterEqual(seen, 5)
+            dialog.close()
+            manual = ManualDeviceDialog(None, "tr")
+            self.addCleanup(manual.deleteLater)
+            manual.show()
+            self.app.processEvents()
+            heights = {w.height() for w in manual.findChildren(QWidget) if w.objectName() == "manualField"}
+            self.assertEqual(heights, {36}, theme)
+            manual.close()
+
+    def test_combo_arrow_is_the_shared_chevron(self) -> None:
+        from PyQt6.QtGui import QColor, QImage
+
+        from src.gui.icons import chevron_png
+
+        for theme, qss, _accent in self._sheets():
+            muted = "#9e9e9e" if theme == "dark" else "#616161"
+            self.assertNotIn("__COMBO_CHEVRON__", qss)
+            drop = _strict_rule(qss, "QComboBox::drop-down")
+            for decl in ("subcontrol-origin: padding;", "subcontrol-position: center right;", "width: 28px;",
+                         "border: none;", "background: transparent;"):
+                self.assertIn(decl, drop, theme)
+            arrow = _strict_rule(qss, "QComboBox::down-arrow")
+            self.assertIn(f"transfertcp_chev_{muted.lstrip('#')}_x4.png", arrow)
+            self.assertIn("width: 12px; height: 12px;", arrow)
+            self.assertNotRegex(_flat_qss(qss), r"QComboBox::(down-arrow|drop-down):(hover|on|disabled|pressed)",
+                                "ok alanı üzerine gelince/açıkken/pasifken değişmez (açık temadaki gri kutu kalktı)")
+            img = QImage(chevron_png(muted))
+            s = 4
+            self.assertEqual((img.width(), img.height()), (12 * s, 12 * s))
+            self.assertEqual(img.pixelColor(6 * s, 8 * s - 1).name(), QColor(muted).name(), "uç")
+            self.assertGreater(img.pixelColor(round(4.25 * s), round(6.25 * s)).alpha(), 200, "sol kol")
+            self.assertEqual(img.pixelColor(6 * s, round(5.5 * s)).alpha(), 0, "içi boş")
+            self.assertEqual(img.pixelColor(2, 2).alpha(), 0)
+
+    def test_scrollbar_is_the_shared_spec(self) -> None:
+        for theme, qss, accent in self._sheets():
+            track, handle = ("#1f1f1f", "#575757") if theme == "dark" else ("#d8d8d8", "#a3a3a3")
+            for axis, size, minimum in (("vertical", "width", "min-height"), ("horizontal", "height", "min-width")):
+                bar = _strict_rule(qss, f"QScrollBar:{axis}")
+                for decl in (f"background: {track};", f"{size}: 10px;", "margin: 2px;", "border-radius: 5px;"):
+                    self.assertIn(decl, bar, (theme, axis))
+                grip = _strict_rule(qss, f"QScrollBar::handle:{axis}")
+                for decl in (f"background: {handle};", "border-radius: 5px;", f"{minimum}: 28px;"):
+                    self.assertIn(decl, grip, (theme, axis))
+                hover = _strict_rule(qss, f"QScrollBar::handle:{axis}:hover, QScrollBar::handle:{axis}:pressed")
+                self.assertIn(f"background: {accent};", hover, "vurgu rengini izler")
+
+    def test_font_roles(self) -> None:
+        for theme, qss, _accent in self._sheets():
+            self.assertEqual(self.app.font().pointSizeF(), 10, "gövde 10 pt (uygulama yazı tipi)")
+            header = _strict_rule(qss, "QGroupBox::title")
+            self.assertIn("font-size: 12pt;", header, theme)
+            self.assertIn("font-weight: 700;", header, theme)
+            for selector in ("QLabel#settingsHint", "QLabel#manualDialogHint"):
+                self.assertIn("font-size: 9pt;", _strict_rule(qss, selector), (theme, selector))
+            for selector in ("QPushButton", "QWidget#settingsDialog QPushButton#settingsFooterBtn",
+                             "QPushButton#dialogCompactBtn"):
+                rule = _strict_rule(qss, selector)
+                self.assertIn("font-size: 10pt;", rule, (theme, selector))
+                self.assertIn("font-weight: 600;", rule, (theme, selector))
+            for selector in ('QPushButton[class="menu-button"]', "QPushButton#clearListBtn", "QPushButton#cancelAllBtn"):
+                rule = _strict_rule(qss, selector)
+                self.assertIn("font-size: 9pt;", rule, (theme, selector))
+                self.assertIn("font-weight: 600;", rule, (theme, selector))
+        from PyQt6.QtWidgets import QLabel
+
+        titles = [lab for lab in self._window().findChildren(QLabel) if lab.text() == "TransferTCP"]
+        self.assertEqual(len(titles), 1)
+        self.assertIn("font-size: 9.5pt;", titles[0].styleSheet(), "pencere başlığı")
+        self.assertIn("font-weight: 600;", titles[0].styleSheet())
+
+
 class LocalesFormatTest(unittest.TestCase):
     def setUp(self) -> None:
         from src.utils.locales import LOCALES

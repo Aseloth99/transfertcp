@@ -240,6 +240,28 @@ def checkmark_png(color_hex: str = "#ffffff") -> str:
     return dest.replace("\\", "/")
 
 
+def chevron_png(color_hex: str) -> str:
+    """Açılır liste oku (QSS `image:` için PNG yolu, '/' ayraçlı).
+
+    Lumina/FlexiKey/MediaCompressor ile aynı çizim: 12x12 kutuda (2.5,4.5)-(6,8)-(9.5,4.5), 1.5 px yuvarlak uçlu kalem,
+    4x çözünürlük, soluk yazı renginde; üzerine gelince, açıkken ve pasifken değişmez. QImage ile çizilir."""
+    s = _CHECK_SCALE
+    dest = os.path.join(tempfile.gettempdir(), f"transfertcp_chev_{color_hex.lstrip('#').lower()}_x{s}.png")
+    if not os.path.exists(dest):
+        img = QImage(12 * s, 12 * s, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(color_hex), 1.5 * s)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.drawPolyline(QPolygonF([QPointF(2.5 * s, 4.5 * s), QPointF(6 * s, 8 * s), QPointF(9.5 * s, 4.5 * s)]))
+        p.end()
+        img.save(dest, "PNG")
+    return dest.replace("\\", "/")
+
+
 def _menu_accent(kind: str = "accent") -> str:
     """Seçili vurgunun rengi (`accent`, `hi_light`): ayarlardaki (ya da önizlenen) vurgu."""
     from .palette import accent_spec

@@ -101,8 +101,8 @@ QPushButton[class="menu-button"] {
     border-left-color: #3a3a3a;
     border-radius: 6px;
     padding: 0px 22px 0px 10px;
-    font-size: 8.5pt;
-    font-weight: 500;
+    font-size: 9pt;
+    font-weight: 600;
     min-height: 24px;
     max-height: 24px;
 }
@@ -151,10 +151,10 @@ QPushButton {
     border: 1px solid #1a1a1a;
     border-top-color: #3a3a3a;
     border-left-color: #3a3a3a;
-    border-radius: 14px;
-    padding: 10px 22px;
+    border-radius: 10px;
+    padding: 8px 18px;
     font-size: 10pt;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 QPushButton:hover {
@@ -233,11 +233,11 @@ QPushButton#clearListBtn {
     background-color: #252525;
     color: #d0d0d0;
     border: 1px solid #3a3a3a;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 3px 10px;
     min-height: 24px;
     max-height: 26px;
-    font-size: 8.5pt;
+    font-size: 9pt;
     font-weight: 600;
 }
 
@@ -247,11 +247,11 @@ QPushButton#cancelAllBtn {
     background-color: #252525;
     color: #d0d0d0;
     border: 1px solid #3a3a3a;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 3px 10px;
     min-height: 24px;
     max-height: 26px;
-    font-size: 8.5pt;
+    font-size: 9pt;
     font-weight: 600;
 }
 
@@ -370,9 +370,8 @@ QComboBox {
     background-color: #242424;
     border: 1px solid #3a3a3a;
     border-radius: 8px;
-    padding: 6px 12px;
-    padding-right: 32px;
-    min-height: 28px;
+    padding: 0px 32px 0px 12px;
+    min-height: 34px;  /* + 1 px kenar x2 = 36 px: dört uygulamada açılır liste yüksekliği */
     color: #e8e8e8;
 }
 
@@ -394,9 +393,9 @@ QComboBox::drop-down {
 }
 
 QComboBox::down-arrow {
-    image: url("__ASSET_ICONS__/arrow_down_dark.svg");
-    width: 10px;
-    height: 10px;
+    image: url("__COMBO_CHEVRON__");
+    width: 12px;
+    height: 12px;
 }
 
 QComboBox QAbstractItemView {
@@ -627,7 +626,7 @@ QPushButton#transferActionBtn,
 QPushButton#transferCancelBtn {
     background-color: transparent;
     border: 1px solid #3a3a3a;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 0px;
 }
 
@@ -654,7 +653,7 @@ QPushButton#favoriteBtn {
     border: none;
     font-size: 20px;
     color: #FFC107;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 2px;
 }
 
@@ -667,27 +666,24 @@ QPushButton#favoriteBtn:pressed {
     background-color: rgba(255, 193, 7, 0.25);
 }
 
-/* Scroll Bar - nötr gri, açık temadaki gibi ince (vurgu renkli kalın çubuk listede göze batıyordu) */
+/* Scroll Bar - dört uygulamada aynı (MediaCompressor ölçüsü): 10 px, nötr tutamaç, üzerine gelince/basılıyken vurgu */
 QScrollBar:vertical {
     background: #1f1f1f;
-    width: 14px;
-    border-radius: 7px;
+    width: 10px;
+    border-radius: 5px;
     border: none;
     margin: 2px;
 }
 
 QScrollBar::handle:vertical {
-    background: #4a4a4a;
+    background: #575757;
     border-radius: 5px;
-    min-height: 30px;
+    min-height: 28px;
 }
 
-QScrollBar::handle:vertical:hover {
-    background: #5f5f5f;
-}
-
+QScrollBar::handle:vertical:hover,
 QScrollBar::handle:vertical:pressed {
-    background: #747474;
+    background: #2196F3;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -702,24 +698,21 @@ QScrollBar::groove:vertical {
 
 QScrollBar:horizontal {
     background: #1f1f1f;
-    height: 14px;
-    border-radius: 7px;
+    height: 10px;
+    border-radius: 5px;
     border: none;
     margin: 2px;
 }
 
 QScrollBar::handle:horizontal {
-    background: #4a4a4a;
+    background: #575757;
     border-radius: 5px;
-    min-width: 30px;
+    min-width: 28px;
 }
 
-QScrollBar::handle:horizontal:hover {
-    background: #5f5f5f;
-}
-
+QScrollBar::handle:horizontal:hover,
 QScrollBar::handle:horizontal:pressed {
-    background: #747474;
+    background: #2196F3;
 }
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
@@ -794,8 +787,8 @@ QGroupBox::title {
     padding: 0 8px;
     color: #64B5F6;
     background-color: #1a1a1a;
-    font-weight: 600;
-    font-size: 10.5pt;
+    font-weight: 700;
+    font-size: 12pt;
 }
 
 /* Progress Bar - Enhanced Neumorphic */
@@ -914,13 +907,19 @@ QWidget#settingsDialog QLineEdit#settingsLineEdit,
 QWidget#settingsDialog QComboBox#settingsCombo {
     padding: 0px 10px;
     border-radius: 8px;
-    min-height: 36px;
-    max-height: 36px;
+    min-height: 34px;  /* + 1 px kenar x2 = 36 px (dört uygulamada aynı) */
+    max-height: 34px;
+}
+
+/* koyu temada genel QLineEdit kenarı 2 px: toplam yine 36 px */
+QWidget#settingsDialog QLineEdit#settingsLineEdit {
+    min-height: 32px;
+    max-height: 32px;
 }
 
 QWidget#settingsDialog QWidget#settingsSpin {
-    min-height: 36px;
-    max-height: 36px;
+    min-height: 34px;  /* + 1 px kenar x2 = 36 px: aynı sayfadaki açılır listelerle aynı */
+    max-height: 34px;
 }
 
 QWidget#settingsDialog QFormLayout {
@@ -1004,8 +1003,9 @@ QWidget#settingsDialog QPushButton#settingsFooterBtn {
     min-height: 30px;
     max-height: 34px;
     padding: 4px 14px;
-    border-radius: 8px;
-    font-size: 9.5pt;
+    border-radius: 10px;
+    font-size: 10pt;
+    font-weight: 600;
 }
 
 /* Manual device dialog */
@@ -1022,7 +1022,7 @@ QLabel#manualDialogTitle {
 
 QLabel#manualDialogHint {
     color: #888888;
-    font-size: 9.5pt;
+    font-size: 9pt;
     line-height: 1.35em;
     padding-bottom: 4px;
 }
@@ -1039,8 +1039,8 @@ QLineEdit#manualField {
     border: 1px solid #3a3a3a;
     border-radius: 8px;
     color: #e8e8e8;
-    min-height: 36px;
-    max-height: 36px;
+    min-height: 34px;  /* + 1 px kenar x2 = 36 px */
+    max-height: 34px;
     padding: 0px 12px;
     selection-background-color: #2196F3;
 }
@@ -1051,8 +1051,8 @@ QLineEdit#manualField:focus {
 }
 
 QWidget#manualField {
-    min-height: 36px;
-    max-height: 36px;
+    min-height: 34px;  /* + 1 px kenar x2 = 36 px (alanlar ve port kutusu) */
+    max-height: 34px;
 }
 
 /* Stepper spin box */
@@ -1121,7 +1121,7 @@ QWidget#manualDeviceDialog QPushButton#manualSecondaryButton {
     min-height: 40px;
     padding: 0px 20px;
     border-radius: 10px;
-    font-size: 9.5pt;
+    font-size: 10pt;
     font-weight: 600;
 }
 
@@ -1200,8 +1200,9 @@ QPushButton#dialogCompactBtn {
     min-height: 28px;
     max-height: 30px;
     padding: 4px 14px;
-    border-radius: 8px;
-    font-size: 9.5pt;
+    border-radius: 10px;
+    font-size: 10pt;
+    font-weight: 600;
 }
 
 /* Splitter - Enhanced Neumorphic */

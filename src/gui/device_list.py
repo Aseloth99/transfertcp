@@ -438,8 +438,10 @@ class DeviceListWidget(QWidget):
         others = [w for w in (self.title_label, self.add_btn, self.refresh_btn) if not w.isHidden()]
         layout = self._header.layout()
         margins = layout.contentsMargins()
+        # sabit boyutlu "+" düğmesinin sizeHint'i (15) gerçek genişliğinden (32) küçük: yerleşimin verdiği genişliği say
         room = (self._header.width() - margins.left() - margins.right()
-                - sum(w.sizeHint().width() for w in others) - layout.spacing() * (len(others) + 1))
+                - sum(max(w.sizeHint().width(), w.minimumWidth()) for w in others)
+                - layout.spacing() * (len(others) + 1))
         fits = self.device_count_label.fontMetrics().horizontalAdvance(full) <= room
         self.device_count_label.setText(full if fits else short)
         self.device_count_label.setToolTip(t("devices_online_tip", self.lang).format(online=online, total=total))
