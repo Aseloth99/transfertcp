@@ -3,6 +3,7 @@
 import json
 import ssl
 import sys
+import time
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -48,6 +49,48 @@ def as_text(value) -> str:
     return value.strip() if isinstance(value, str) else ("" if value is None or isinstance(value, (dict, list)) else str(value).strip())
 
 
+# Geçici ağ hatasında kısa yeniden deneme. Bazı ağlarda DNS ya da bağlantı birkaç saniyeliğine takılır (Kasım 2026
+# ölçümü: tek bir alan adı 6-18 sn boyunca anında "bulunamadı" döndü, sonra düzeldi). Denetim böyle bir ana denk
+# gelince hemen "denetlenemedi" demek yerine 3 ve 8 sn sonra yeniden dener; kalıcı hatada (4xx, sertifika) beklemez.
+RETRY_DELAYS: tuple = (3.0, 8.0)
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """Birazdan geçebilecek bir ağ hatası mı: DNS, bağlantı, zaman aşımı ya da sunucunun 5xx / 408 / 429 yanıtı."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in (408, 429) or 500 <= exc.code <= 599
+    if isinstance(exc, urllib.error.URLError):
+        if not isinstance(exc.reason, BaseException):
+            return False  # "unknown url type" gibi: yeniden denemek düzeltmez
+        exc = exc.reason
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return False
+    return isinstance(exc, OSError)  # socket.gaierror, ConnectionError, TimeoutError
+
+
+def _pause(seconds: float, stop) -> bool:
+    """`seconds` kadar bekler; `stop()` True olursa (uygulama kapanıyor) hemen False döner."""
+    end = time.monotonic() + seconds
+    while True:
+        if stop():
+            return False
+        left = end - time.monotonic()
+        if left <= 0:
+            return True
+        time.sleep(min(0.1, left))
+
+
+def urlopen_with_retry(req, timeout: float, context=None, stop=lambda: False):
+    """urllib.request.urlopen; geçici hatada RETRY_DELAYS aralıklarıyla yeniden dener, sonunda son hatayı yükseltir."""
+    delays = tuple(RETRY_DELAYS)
+    for attempt in range(len(delays) + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=context)
+        except Exception as exc:
+            if attempt == len(delays) or not is_transient_error(exc) or not _pause(delays[attempt], stop):
+                raise
+
+
 class _AutoCheckThread(QThread):
     def __init__(self, checker, parent=None):
         super().__init__(parent)
@@ -79,7 +122,7 @@ class UpdateChecker(QObject):
     notice_received = pyqtSignal(object)  # remote_notice.Notice (duyuru satırı)
 
     # Update check configuration - Edit these values directly in this file
-    CURRENT_VERSION = "1.0.7"  # Update this version number when releasing
+    CURRENT_VERSION = "1.0.8"  # Update this version number when releasing
     UPDATE_CHECK_URL = "https://macik.com.tr/api/updates/check"  
     APP_NAME = "TransferTCP"
     # Açılışta: son denetim bundan eskiyse hemen denetlenir (uzun süre açılmayanlar yeni sürümü hemen görür).
@@ -116,6 +159,9 @@ class UpdateChecker(QObject):
     def stop(self):
         """Stop automatic update checking"""
         self.check_timer.stop()
+        for thread in (self._auto_thread, self._manual_thread):
+            if thread is not None and thread.isRunning():
+                thread.requestInterruption()  # yeniden deneme beklemesi hemen biter
         if self._auto_thread is not None and self._auto_thread.isRunning():
             self._auto_thread.wait(12000)
         if self._manual_thread is not None and self._manual_thread.isRunning():
@@ -204,7 +250,7 @@ class UpdateChecker(QObject):
                 ssl_context = None
             
             # Increase timeout and handle errors gracefully
-            with urllib.request.urlopen(req, timeout=10, context=ssl_context) as response:
+            with urlopen_with_retry(req, 10, ssl_context, stop=QThread.currentThread().isInterruptionRequested) as response:
                 data = json.loads(response.read().decode())
                 if not isinstance(data, dict):
                     raise ValueError("güncelleme yanıtı bir JSON nesnesi değil")
